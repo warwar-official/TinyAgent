@@ -1,0 +1,19 @@
+{
+    "tools": [
+        {
+            "name":"get_current_temperature",
+            "description":"Gets the current temperature for a given location.",
+            "parameters":
+                {
+                    "type":"object",
+                    "properties": {
+                        "location":{
+                            "type":"string",
+                            "description":"The city name, e.g. Lviv"
+                        }
+                    },
+                    "required": ["location"]
+                }
+        }
+    ]
+}
