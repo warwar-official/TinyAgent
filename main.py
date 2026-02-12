@@ -1,5 +1,5 @@
 from imports.models.gemini import GeminiModel
-from imports.tools.get_current_temperature import get_current_temperature
+from imports.tools.get_current_weather import get_current_temperature
 import json
 import os
 import dotenv
