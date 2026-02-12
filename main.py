@@ -58,7 +58,7 @@ def perform_loop(model: GeminiModel, prompt: str):
     print(answer)
     history.append(("model", answer))
     tool = parse_toolcall(answer)
-    res = tool_table[tool["name"]](**tool["arguments"])
+    res = use_tool(tool)
     history.append(("user", f"Tool {tool['name']}, arguments: {tool['arguments']}, returned result: {res}"))
     payload = history_to_payload(history)
     answer = model.make_request(payload)
@@ -67,7 +67,11 @@ def perform_loop(model: GeminiModel, prompt: str):
 
 def parse_toolcall(message: str) -> dict:
     toolcall = message[message.find("{"):message.rfind("}")+1]
-    return json.loads(toolcall)
+    return json.loads(toolcall)["toolcall"]
+
+def use_tool(toolcall: dict) -> str:
+    result = tool_table[toolcall["name"]](**toolcall["arguments"])
+    return result
 
 def main():
     model = GeminiModel("gemma-3-27b-it", os.getenv("GEMINI_API_KEY"))
