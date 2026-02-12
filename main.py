@@ -1,14 +1,12 @@
 from imports.models.gemini import GeminiModel
-from imports.tools.get_current_weather import get_current_temperature
-import json
+from imports.tools.get_current_weather import get_current_weather
+from imports.loop_manager import LoopManager
 import os
 import dotenv
+import json
+import importlib
 
 dotenv.load_dotenv()
-
-tool_table = {
-    "get_current_temperature":get_current_temperature
-}
 
 sys_prompt = """
 Instructions:
@@ -19,89 +17,36 @@ You can tools by writing json signature: {"toolcall": {"name":"tool_name", "argu
 
 Avaible tools:
 
-'name':'get_current_temperature',
-'description':'Gets the current temperature for a given location.',
-'parameters':
-    {
-        'properties': {
-            'location':{
-                'type':'string',
-                'description':'The city name, e.g. Lviv'
-            }
-        },
-        'required': ['location']
-    }
 """
 
-def history_to_payload(history: list[tuple[str, str]]) -> dict:
-    payload = {
-        'contents': [
-        ]
-    }
-    for role, text in history:    
-        payload['contents'].append({
-            'role': role,
-            'parts': [
-                {
-                    'text': text
-                }
-            ]
-        })
-    return payload
+def load_config() -> dict:
+    with open("config.json", "r") as f:
+        return json.load(f)
 
-def perform_loop(model: GeminiModel, prompt: str):
-    history: list[tuple[str, str]] = []
-    history.append(("user", sys_prompt))
-    history.append(("user", prompt))
-    payload = history_to_payload(history)
-    answer = model.make_request(payload)
-    print(answer)
-    history.append(("model", answer))
-    tool = parse_toolcall(answer)
-    res = use_tool(tool)
-    history.append(("user", f"Tool {tool['name']}, arguments: {tool['arguments']}, returned result: {res}"))
-    payload = history_to_payload(history)
-    answer = model.make_request(payload)
-    history.append(("model", answer))
-    return answer
+def load_tools(config: dict) -> dict:
+    tool_table = {}
+    for tool in config["tools"]:
+        tool_name = tool["name"]
+        module = importlib.import_module(f"imports.tools.{tool_name}")
+        tool_table[tool_name] = getattr(module, tool_name)
+    return tool_table
 
-def parse_toolcall(message: str) -> dict:
-    toolcall = message[message.find("{"):message.rfind("}")+1]
-    return json.loads(toolcall)["toolcall"]
-
-def use_tool(toolcall: dict) -> str:
-    result = tool_table[toolcall["name"]](**toolcall["arguments"])
-    return result
+def make_tool_prompt(config: dict) -> str:
+    prompt = ""
+    for tool in config["tools"]:
+        prompt += f"\n{tool['name']}: {tool['description']}\nParameters: {tool['parameters']}\n"
+    return prompt
 
 def main():
     model = GeminiModel("gemma-3-27b-it", os.getenv("GEMINI_API_KEY"))
-    answer = perform_loop(model, "What the wether in Kyiv?")
-    print(answer)
+    config = load_config()
+    tool_table = load_tools(config)
+    system_prompt = sys_prompt + make_tool_prompt(config)
+    loop_manager = LoopManager()
+    loop_manager.set_model(model)
+    loop_manager.set_system_prompt(system_prompt)
+    loop_manager.set_tool_table(tool_table)
+    loop_manager.perform_loop("Hi, help me. Find the information about Ukrainian athlete that was disqualified. And send me this information as a message.")
 
 if __name__ == "__main__":
     main()
-
-"""
-,
-        'tools': [
-            {
-                'functionDeclarations': [
-                    {
-                        'name':'get_current_temperature',
-                        'description':'Gets the current temperature for a given location.',
-                        'parameters':
-                            {
-                                'type':'object',
-                                'properties': {
-                                    'location':{
-                                        'type':'string',
-                                        'description':'The city name, e.g. Lviv'
-                                    }
-                                },
-                                'required': ['location']
-                            }
-                    }
-                ]
-            }
-        ]
-"""
