@@ -30,8 +30,8 @@ class LoopManager:
             self._add_record("model",answer)
             toolcall = self._parse_toolcall(answer)
         if self.step > 10:
-            self.perform_summary()
             self.step = 0
+            self.perform_summary()
 
     def perform_summary(self) -> None:
         summary_prompt = (

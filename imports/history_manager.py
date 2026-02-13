@@ -27,7 +27,10 @@ class HistoryManager:
         return records_list
 
     def remove_record(self, record_id: str) -> None:
-        self.history.remove(record_id)
+        for record in self.history:
+            if record.id == record_id:
+                self.history.remove(record)
+                break
 
     def load_history(self, file_path: Path) -> None:
         raise NotImplementedError

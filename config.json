@@ -36,7 +36,7 @@
         },
         {
             "name": "fetch_url",
-            "description": "Fetches the content of a URL, returning clean text, links, and table data.",
+            "description": "Fetches the content of a URL, returning clean text, links, and table data. It is not rendering images or scripts.",
             "parameters": {
                 "properties": {
                     "url": {
