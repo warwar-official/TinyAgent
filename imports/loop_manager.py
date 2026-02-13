@@ -19,6 +19,14 @@ class LoopManager:
         self.tool_table = tool_table
     
     def perform_loop(self, initial_prompt: str) -> None:
+        answer = self.model.make_request(self._make_payload())
+        self._add_record("model",answer)
+        toolcall = self._parse_toolcall(answer)
+        if toolcall:
+            self._use_tool(toolcall)
+        payload = self._make_payload()
+        answer = self.model.make_request(payload)
+        self._add_record("model",answer)
         self._add_record("user",initial_prompt)
         payload = self._make_payload()
         answer = self.model.make_request(payload)
@@ -69,6 +77,6 @@ class LoopManager:
     def _use_tool(self, toolcall: dict) -> None:
         if toolcall["name"] in self.tool_table:
             result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
-            self.history.add_record("user",f"Tool {toolcall['name']}, arguments: {toolcall['arguments']}, returned result: {result}")
+            self._add_record("user",f"Tool {toolcall['name']}, returned result: {result}")
         else:
-            self.history.add_record("user",f"Tool {toolcall['name']} not found")
+            self._add_record("user",f"Tool {toolcall['name']} not found")

@@ -1,5 +1,4 @@
 from imports.models.gemini import GeminiModel
-from imports.tools.get_current_weather import get_current_weather
 from imports.loop_manager import LoopManager
 import os
 import dotenv
@@ -9,13 +8,11 @@ import importlib
 dotenv.load_dotenv()
 
 sys_prompt = """
-Instructions:
+Before you perform any actions, read the "identity.md" file. It contains important information about your role and tasks.
 
-You are helpful assistant.
-Give answer in Ukrainian.
-You can tools by writing json signature: {"toolcall": {"name":"tool_name", "arguments": []}}
+You can use tools by writing json signature: {"toolcall": {"name":"tool_name", "arguments": []}}
 
-Avaible tools:
+Available tools:
 
 """
 
@@ -46,7 +43,7 @@ def main():
     loop_manager.set_model(model)
     loop_manager.set_system_prompt(system_prompt)
     loop_manager.set_tool_table(tool_table)
-    loop_manager.perform_loop("Hi, help me. Find the information about Ukrainian athlete that was disqualified. And send me this information as a message.")
+    loop_manager.perform_loop("Hi, help me. Find the information about Ukrainian athlete that was disqualified. And write this information in the file.")
 
 if __name__ == "__main__":
     main()

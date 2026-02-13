@@ -48,6 +48,41 @@
                     "message"
                 ]
             }
+        },
+        {
+            "name": "read_file",
+            "description": "Reads a file.",
+            "parameters": {
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to the file."
+                    }
+                },
+                "required": [
+                    "path"
+                ]
+            }
+        },
+        {
+            "name": "write_file",
+            "description": "Writes a file.",
+            "parameters": {
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to the file."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write to the file."
+                    }
+                },
+                "required": [
+                    "path",
+                    "content"
+                ]
+            }
         }
     ]
 }
