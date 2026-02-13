@@ -22,12 +22,9 @@ class HistoryManager:
         new_record = HistoryRecord(record_id, creation_date, role, message)
         self.history.append(new_record)
     
-    def get_records(self, count: int = 0) -> list[tuple[str,str]]:
+    def get_records(self, count: int = 0) -> list[HistoryRecord]:
         records_list = self.history[0 - count:]
-        result_list: list[tuple[str, str]] = []
-        for record in records_list:
-            result_list.append((record.role, record.message))
-        return result_list
+        return records_list
 
     def load_history(self, file_path: Path) -> None:
         raise NotImplementedError

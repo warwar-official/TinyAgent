@@ -40,7 +40,11 @@ def main():
     tool_table = load_tools(config)
     system_prompt = sys_prompt + make_tool_prompt(config)
     loop_manager = LoopManager(system_prompt, model, tool_table)
-    loop_manager.perform_loop("Hi, help me. Find the information about Ukrainian athlete that was disqualified. And write this information in the file.")
+    while True:
+        user_input = input("Enter your message: ")
+        if user_input == "\\bye":
+            break
+        loop_manager.perform_loop(user_input)
 
 if __name__ == "__main__":
     main()

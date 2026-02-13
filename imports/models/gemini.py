@@ -1,5 +1,6 @@
 from imports.models.base_model import BaseAPIModel
 import requests
+import time
 
 class GeminiModel(BaseAPIModel):
     def __init__(self, model_id: str, api_key: str) -> None:
@@ -18,6 +19,17 @@ class GeminiModel(BaseAPIModel):
             headers=headers,
             json=payload
         )
+        tries = 0
+        while response.status_code != 200:
+            time.sleep(1)
+            tries += 1
+            if tries > 3:
+                raise Exception("API request failed")
+            response = requests.post(
+                url=f"{self.API_ENDPOINT}{self.MODEL_ID}:generateContent",
+                headers=headers,
+                json=payload
+            )
         answer = response.json()
         asnswer_message = answer.get("candidates")[0].get("content").get("parts")[0].get("text")
         return asnswer_message
