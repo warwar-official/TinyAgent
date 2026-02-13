@@ -21,7 +21,12 @@ class GeminiModel(BaseAPIModel):
         )
         tries = 0
         while response.status_code != 200:
-            time.sleep(1)
+            if response.status_code == 503:
+                time.sleep(1)
+            elif response.status_code == 429:
+                time.sleep(60)
+            else:
+                raise Exception(f"API request failed: code {response.status_code}")
             tries += 1
             if tries > 3:
                 raise Exception("API request failed")

@@ -45,7 +45,7 @@ class LoopManager:
     
     def perform_system_summary(self) -> None:
         system_summary_prompt = (
-            "Please, summarize how ypu under your role and instructions.\n"
+            "Please, summarize how you understand your role and instructions.\n"
             "Dont use tools.\n"
             "Dont summarize information about tools."
             )
@@ -97,6 +97,11 @@ class LoopManager:
             json.dump(payload, f, indent=4, ensure_ascii=False)
         return payload
     
+    def _remove_old_tool_results(self) -> None:
+        for record in self.history.get_records():
+            if record.message.startswith("Tool") and record.role == "user":
+                self.history.remove_record(record.id)
+    
     def _add_record(self, role: str, message: str) -> None:
         self.history.add_record(role, message)
         print(f"{role}: {message}")
@@ -109,6 +114,7 @@ class LoopManager:
             return None
     
     def _use_tool(self, toolcall: dict) -> None:
+        self._remove_old_tool_results()
         if toolcall["name"] in self.tool_table:
             result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
             self._add_record("user",f"Tool {toolcall['name']}, returned result: {result}")

@@ -35,6 +35,21 @@
             }
         },
         {
+            "name": "fetch_url",
+            "description": "Fetches the content of a URL, returning clean text, links, and table data.",
+            "parameters": {
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch content from."
+                    }
+                },
+                "required": [
+                    "url"
+                ]
+            }
+        },
+        {
             "name": "send_message",
             "description": "Sends a message to a user interface.",
             "parameters": {

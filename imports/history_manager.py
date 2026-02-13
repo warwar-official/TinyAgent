@@ -26,6 +26,9 @@ class HistoryManager:
         records_list = self.history[0 - count:]
         return records_list
 
+    def remove_record(self, record_id: str) -> None:
+        self.history.remove(record_id)
+
     def load_history(self, file_path: Path) -> None:
         raise NotImplementedError
 
