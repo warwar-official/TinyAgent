@@ -31,6 +31,12 @@ class HistoryManager:
             if record.id == record_id:
                 self.history.remove(record)
                 break
+    
+    def update_record(self, record_id: str, message: str) -> None:
+        for record in self.history:
+            if record.id == record_id:
+                record.message = message
+                break
 
     def load_history(self, file_path: Path) -> None:
         raise NotImplementedError

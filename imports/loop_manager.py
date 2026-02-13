@@ -114,9 +114,24 @@ class LoopManager:
             return None
     
     def _use_tool(self, toolcall: dict) -> None:
-        self._remove_old_tool_results()
+        #self._remove_old_tool_results()
         if toolcall["name"] in self.tool_table:
             result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
-            self._add_record("user",f"Tool {toolcall['name']}, returned result: {result}")
+            if len(result) > 1000:
+                result = self.model.make_request({
+                    "contents": [
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "text": f"Make summary of tool execution result. Extract important information. Tool name: {toolcall['name']}, returned result: {result}"
+                                }
+                            ]
+                        }
+                    ]
+                })
+                self._add_record("user",f"Tool {toolcall['name']}, returned result was too long, summary: {result}")
+            else:
+                self._add_record("user",f"Tool {toolcall['name']}, returned result: {result}")
         else:
             self._add_record("user",f"Tool {toolcall['name']} not found")

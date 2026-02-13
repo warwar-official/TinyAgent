@@ -11,6 +11,7 @@ sys_prompt = """
 Before you perform any actions, read the "identity.md" file. It contains important information about your role and tasks.
 
 You can use tools by writing json signature: {"toolcall": {"name":"tool_name", "arguments": []}}
+If you call tool, you will initialize tool loop. So ask questions and make sure you have all information before calling tool.
 
 Available tools:
 
