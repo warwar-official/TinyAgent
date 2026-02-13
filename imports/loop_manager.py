@@ -3,30 +3,15 @@ from imports.models.base_model import BaseAPIModel
 import json
 
 class LoopManager:
-    def __init__(self) -> None:
+    def __init__(self, system_prompt: str, model: BaseAPIModel, tool_table: dict[str, callable]) -> None:
         self.history: HistoryManager = HistoryManager()
-        self.model: BaseAPIModel | None = None
-        self.system_prompt: str = ""
-        self.tool_table: dict[str, callable] = {}
+        self.model: BaseAPIModel = model
+        self.system_prompt: str = system_prompt
+        self.tool_table: dict[str, callable] = tool_table
 
-    def set_model(self, model: BaseAPIModel) -> None:
-        self.model = model
-
-    def set_system_prompt(self, prompt: str) -> None:
-        self.system_prompt = prompt
-    
-    def set_tool_table(self, tool_table: dict[str, callable]) -> None:
-        self.tool_table = tool_table
+        self.perform_loop(system_prompt)
     
     def perform_loop(self, initial_prompt: str) -> None:
-        answer = self.model.make_request(self._make_payload())
-        self._add_record("model",answer)
-        toolcall = self._parse_toolcall(answer)
-        if toolcall:
-            self._use_tool(toolcall)
-        payload = self._make_payload()
-        answer = self.model.make_request(payload)
-        self._add_record("model",answer)
         self._add_record("user",initial_prompt)
         payload = self._make_payload()
         answer = self.model.make_request(payload)
@@ -44,14 +29,6 @@ class LoopManager:
             'contents': [
             ]
         }
-        payload['contents'].append({
-                'role': 'user',
-                'parts': [
-                    {
-                        'text': self.system_prompt
-                    }
-                ]
-            })
         for role, text in self.history.get_records():    
             payload['contents'].append({
                 'role': role,
