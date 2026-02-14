@@ -32,6 +32,19 @@ class LoopManager:
         if self.step > 10:
             self.step = 0
             self.perform_summary()
+    
+    def perform_single_call(self, prompt: str) -> str:
+        payload = self._make_payload()
+        payload['contents'].append({
+            'role': "user",
+            'parts': [
+                {
+                    'text': prompt
+                }
+            ]
+        })
+        answer = self.model.make_request(payload)
+        return answer
 
     def perform_summary(self) -> None:
         summary_prompt = (
@@ -39,7 +52,7 @@ class LoopManager:
             "Dont use tools.\n"
             "Dont summaryze system or identity information. Concentrate on conversation, facts. If you are doing multi-step task now, describe it to be able to continue it."
         )
-        self.perform_loop(summary_prompt)
+        self.perform_single_call(summary_prompt)
         self.conversation_summary = self.history.get_records()[-1].message
         self.conversation_summary_id = self.history.get_records()[-1].id
     
@@ -49,8 +62,8 @@ class LoopManager:
             "Dont use tools.\n"
             "Dont summarize information about tools."
             )
-        self.perform_loop(system_summary_prompt)
-        self.system_summary = self.history.get_records()[-1].message
+        self.system_summary = self.perform_single_call(system_summary_prompt)
+        self.conversation_summary = self.history.get_records()[-1].message
         self.conversation_summary_id = self.history.get_records()[-1].id
 
     def _make_payload(self) -> dict:
@@ -63,7 +76,7 @@ class LoopManager:
                 'role': "user",
                 'parts': [
                     {
-                        'text': self.system_prompt + "\n\n Identity summary: " + self.system_summary
+                        'text': "[SYSTEM]" + self.system_prompt + "\n\n Identity summary: " + self.system_summary + "[SYSTEM_END]"
                     }
                 ]
             })
@@ -108,12 +121,13 @@ class LoopManager:
 
     def _parse_toolcall(self, message: str) -> dict | None:
         if "toolcall" in message:
-            toolcall = message[message.find("{"):message.rfind("}")+1]
+            toolcall = message[message.find("{\"toolcall"):message.rfind("}")+1]
             return json.loads(toolcall)["toolcall"]
         else:
             return None
     
     def _use_tool(self, toolcall: dict) -> None:
+        tool_result_template = """[TOOL: {name}] {result} [TOOL_END]"""
         #self._remove_old_tool_results()
         if toolcall["name"] in self.tool_table:
             result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
@@ -130,8 +144,8 @@ class LoopManager:
                         }
                     ]
                 })
-                self._add_record("user",f"Tool {toolcall['name']}, returned result was too long, summary: {result}")
+                self._add_record("model",tool_result_template.format(name=toolcall["name"], result=result))
             else:
-                self._add_record("user",f"Tool {toolcall['name']}, returned result: {result}")
+                self._add_record("model",tool_result_template.format(name=toolcall["name"], result=result))
         else:
-            self._add_record("user",f"Tool {toolcall['name']} not found")
+            self._add_record("model",tool_result_template.format(name=toolcall["name"], result="Error: Tool not found"))
