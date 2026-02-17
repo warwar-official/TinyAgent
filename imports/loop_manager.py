@@ -1,40 +1,38 @@
 from imports.history_manager import HistoryManager
-from imports.models.base_model import BaseAPIModel
+from imports.models.generative.base_model import BaseAPIModel
 import json
 
 class LoopManager:
-    def __init__(self, system_prompt: str, model: BaseAPIModel, tool_table: dict[str, callable]) -> None:
-        self.history: HistoryManager = HistoryManager()
+    def __init__(self, model: BaseAPIModel, context_manager: ContextManager, tool_table: dict[str, callable]) -> None:
+        self.context_manager: ContextManager = context_manager
         self.model: BaseAPIModel = model
-        self.system_prompt: str = system_prompt
         self.tool_table: dict[str, callable] = tool_table
-        self.conversation_summary: str | None = None
-        self.conversation_summary_id: str | None = None
-        self.system_summary: str | None = None
         self.step: int = 0
 
-        self.perform_loop(system_prompt)
+        self.perform_loop(self.context_manager.system_prompt)
         self.perform_system_summary()
     
     def perform_loop(self, initial_prompt: str) -> None:
-        self._add_record("user",initial_prompt)
-        payload = self._make_payload()
+        self.context_manager.add_record("user",initial_prompt)
+        payload = self.context_manager.make_payload()
         answer = self.model.make_request(payload)
-        self._add_record("model",answer)
-        toolcall = self._parse_toolcall(answer)
+        self.context_manager.add_record("model",answer)
+        toolcall = self.context_manager.parse_toolcall(answer)
+        self.step += 1
         while toolcall:
             self.step += 1
             self._use_tool(toolcall)
-            payload = self._make_payload()
+            payload = self.context_manager.make_payload()
             answer = self.model.make_request(payload)
-            self._add_record("model",answer)
-            toolcall = self._parse_toolcall(answer)
+            self.context_manager.add_record("model",answer)
+            toolcall = self.context_manager.parse_toolcall(answer)
         if self.step > 10:
             self.step = 0
+            self.perform_memory_summary()
             self.perform_summary()
     
     def perform_single_call(self, prompt: str) -> str:
-        payload = self._make_payload()
+        payload = self.context_manager.make_payload()
         payload['contents'].append({
             'role': "user",
             'parts': [
@@ -53,8 +51,8 @@ class LoopManager:
             "Dont summaryze system or identity information. Concentrate on conversation, facts. If you are doing multi-step task now, describe it to be able to continue it."
         )
         self.perform_single_call(summary_prompt)
-        self.conversation_summary = self.history.get_records()[-1].message
-        self.conversation_summary_id = self.history.get_records()[-1].id
+        self.context_manager.conversation_summary = self.context_manager.history.get_records()[-1].message
+        self.context_manager.conversation_summary_id = self.context_manager.history.get_records()[-1].id
     
     def perform_system_summary(self) -> None:
         system_summary_prompt = (
@@ -62,73 +60,25 @@ class LoopManager:
             "Dont use tools.\n"
             "Dont summarize information about tools."
             )
-        self.system_summary = self.perform_single_call(system_summary_prompt)
-        self.conversation_summary = self.history.get_records()[-1].message
-        self.conversation_summary_id = self.history.get_records()[-1].id
-
-    def _make_payload(self) -> dict:
-        payload = {
-            'contents': [
-            ]
-        }
-        if self.system_summary:
-            payload['contents'].append({
-                'role': "user",
-                'parts': [
-                    {
-                        'text': "[SYSTEM]" + self.system_prompt + "\n\n Identity summary: " + self.system_summary + "[SYSTEM_END]"
-                    }
-                ]
-            })
-        if self.conversation_summary:
-            payload['contents'].append({
-                'role': "model",
-                'parts': [
-                    {
-                        'text': self.conversation_summary
-                    }
-                ]
-            })
-        if self.conversation_summary_id:
-            is_new_message = False
-        else:
-            is_new_message = True
-        for record in self.history.get_records():
-            if record.id == self.conversation_summary_id:
-                is_new_message = True
-                continue
-            elif is_new_message:
-                payload['contents'].append({
-                    'role': record.role,
-                    'parts': [
-                        {
-                            'text': record.message
-                        }
-                    ]
-                })
-        with open("payloads_log.json", "a") as f:
-            json.dump(payload, f, indent=4, ensure_ascii=False)
-        return payload
+        self.context_manager.system_summary = self.perform_single_call(system_summary_prompt)
+        self.context_manager.conversation_summary = self.context_manager.history.get_records()[-1].message
+        self.context_manager.conversation_summary_id = self.context_manager.history.get_records()[-1].id
     
-    def _remove_old_tool_results(self) -> None:
-        for record in self.history.get_records():
-            if record.message.startswith("Tool") and record.role == "user":
-                self.history.remove_record(record.id)
-    
-    def _add_record(self, role: str, message: str) -> None:
-        self.history.add_record(role, message)
-        print(f"{role}: {message}")
-
-    def _parse_toolcall(self, message: str) -> dict | None:
-        if "toolcall" in message:
-            toolcall = message[message.find("{\"toolcall"):message.rfind("}")+1]
-            return json.loads(toolcall)["toolcall"]
-        else:
-            return None
+    def perform_memory_summary(self) -> None:
+        memory_summary_prompt = (
+            "Please, summarize important inforamtion from this conversation that should be remembered.\n"
+            "Give answer in JSON format with keys: 'important_facts' (list of strings)"
+            "Dont use tools.\n"
+            "Dont summarize information about tools."
+            )
+        raw_memory_summary = self.perform_single_call(memory_summary_prompt)
+        memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
+        memory_summary_list = json.loads(memory_summary)["important_facts"]
+        for fact in memory_summary_list:
+            self.context_manager.memory.add_fact(fact)
     
     def _use_tool(self, toolcall: dict) -> None:
         tool_result_template = """[TOOL: {name}] {result} [TOOL_END]"""
-        #self._remove_old_tool_results()
         if toolcall["name"] in self.tool_table:
             result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
             if len(result) > 1000:
@@ -144,8 +94,8 @@ class LoopManager:
                         }
                     ]
                 })
-                self._add_record("model",tool_result_template.format(name=toolcall["name"], result=result))
+                self.context_manager.add_record("user",tool_result_template.format(name=toolcall["name"], result=result))
             else:
-                self._add_record("model",tool_result_template.format(name=toolcall["name"], result=result))
+                self.context_manager.add_record("user",tool_result_template.format(name=toolcall["name"], result=result))
         else:
-            self._add_record("model",tool_result_template.format(name=toolcall["name"], result="Error: Tool not found"))
+            self.context_manager.add_record("user",tool_result_template.format(name=toolcall["name"], result="Error: Tool not found"))

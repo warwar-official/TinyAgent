@@ -1,4 +1,4 @@
-from imports.models.base_model import BaseAPIModel
+from imports.models.generative.base_model import BaseAPIModel
 import requests
 import time
 
@@ -13,6 +13,9 @@ class GeminiModel(BaseAPIModel):
             'Content-Type':'application/json',
             'Accept':'application/json',
             'x-goog-api-key':self.API_KEY
+        }
+        payload["generationConfig"] = {
+            "temperature": 1.0
         }
         response = requests.post(
             url=f"{self.API_ENDPOINT}{self.MODEL_ID}:generateContent",
