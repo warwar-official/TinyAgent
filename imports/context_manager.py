@@ -1,5 +1,7 @@
 from imports.history_manager import HistoryManager
 from imports.plugins.memory_RAG import MemoryRAG
+from imports.task_manager import Task
+from datetime import datetime
 import json
 import re
 
@@ -11,6 +13,8 @@ class ContextManager:
         self.conversation_summary: str | None = None
         self.conversation_summary_id: str | None = None
         self.system_summary: str | None = None
+        self.current_task: str = "No task"
+        self.retrived_memories: str = "No retrived memories"
 
     def parse_toolcall(self, message: str) -> dict | None:
         if "toolcall" in message:
@@ -20,8 +24,28 @@ class ContextManager:
             return None
 
     def add_record(self, role: str, message: str) -> None:
+        """if role == "model":
+            message = self._remove_thinking(message)"""
         self.history.add_record(role, message)
         print(f"{role}: {message}")
+    
+    def set_current_task(self, task: Task | None) -> None:
+        if task:
+            self.current_task = task.name + "\n" + task.description + "\n" + task.priority + "\n"
+        else:
+            self.current_task = "No task"
+
+    def retrive_memories(self, query: str) -> None:
+        if self.memory:
+            memories = self.memory.search(query)
+            self.retrived_memories = ""
+            if memories:
+                for memory in memories:
+                    self.retrived_memories += memory + "\n"
+            else:
+                self.retrived_memories = "No retrived memories"
+        else:
+            self.retrived_memories = "No retrived memories"
 
     def make_payload(self) -> dict:
         payload = {
@@ -33,7 +57,15 @@ class ContextManager:
                 'role': "user",
                 'parts': [
                     {
-                        'text': "[SYSTEM]" + self.system_prompt + "\n\n Identity summary: " + self.system_summary + "[SYSTEM_END]"
+                        'text': "[SYSTEM]" + self.system_prompt +
+                        "\n\n Identity summary: " + self.system_summary + "\n\n" +
+                        "[SYSTEM_END]" +
+                        "\n\n[RUNTIME_STATE]" +
+                        "\n\n Current time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + 
+                        "\n\n Current task: " + self.current_task +
+                        "\n\n Retrived memories: " + self.retrived_memories +
+                        "\n\n" +
+                        "[RUNTIME_STATE_END]"
                     }
                 ]
             })

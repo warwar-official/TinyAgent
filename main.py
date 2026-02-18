@@ -2,6 +2,7 @@ from imports.models.generative.gemini import GeminiModel
 from imports.models.embeddings.lm_studio import LMStudioEmbeddingModel
 from imports.loop_manager import LoopManager
 from imports.context_manager import ContextManager
+from imports.task_manager import TaskManager
 
 from imports.plugins.memory_RAG import MemoryRAG
 
@@ -20,9 +21,8 @@ Inside this block follow next steps:
 1. Describe what user ask you to do.
 2. Describe what you know about this task.
 3. Describe what you need to solve this task.
-4. Make draft of plan to solve this task.
+4. Make draft of the answer.
 After this make answer to user.
-
 
 You can use tools by writing json signature: {"toolcall": {"name":"tool_name", "arguments": []}}
 If you call tool, you will initialize tool loop. So ask questions and make sure you have all information before calling tool.
@@ -51,13 +51,19 @@ def make_tool_prompt(config: dict) -> str:
 
 def main():
     model = GeminiModel("gemma-3-27b-it", os.getenv("GEMINI_API_KEY"))
+
     emb_model = LMStudioEmbeddingModel()
     memory = MemoryRAG("agent_data_system/memory/", emb_model.make_request)
+    
     config = load_config()
     tool_table = load_tools(config)
+    task_manager = TaskManager()
+    tool_table["add_task"] = task_manager.add_task
+    tool_table["finish_task"] = task_manager.finish_task
+
     system_prompt = sys_prompt + make_tool_prompt(config)
     context_manager = ContextManager(system_prompt, memory)
-    loop_manager = LoopManager(model, context_manager, tool_table)
+    loop_manager = LoopManager(model, context_manager, task_manager, tool_table)
 
     while True:
         user_input = input("Enter your message: ")
@@ -67,3 +73,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+    """emb_model = LMStudioEmbeddingModel()
+    memory = MemoryRAG("agent_data_system/memory/", emb_model.make_request)
+    print(memory.get_all_memories_json())"""

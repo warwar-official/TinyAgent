@@ -12,6 +12,12 @@ def web_search(query: str, count: int = 3) -> dict:
     }
 
     response = request("GET", f"https://api.search.brave.com/res/v1/web/search?q={query}&country=US&search_lang=en&count={count}", headers=headers)
+    while response.status_code != 200:
+        if response.status_code == 422:
+            time.sleep(60)
+        else:
+            return {"error": f"Error while searching the web. Status code: {response.status_code}"}
+        response = request("GET", f"https://api.search.brave.com/res/v1/web/search?q={query}&country=US&search_lang=en&count={count}", headers=headers)
     response_json = response.json()
     
     result = {

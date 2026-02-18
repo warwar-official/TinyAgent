@@ -84,7 +84,7 @@ class MemoryRAG:
         with open(self.metadata_path, 'w', encoding='utf-8') as f:
             json.dump(self.metadata, f, ensure_ascii=False, indent=2)
 
-    def search(self, query: str, limit: int = 5, similarity_threshold: float = None) -> list[str]:
+    def search(self, query: str, limit: int = 5, similarity_threshold: float = 0.7) -> list[str]:
         """
         Search for relevant memories.
 
@@ -168,8 +168,8 @@ class MemoryRAG:
         # Using typical values for normalized vectors with L2
         # Identical: < 1e-5 (float precision mostly)
         # Very similar: < 0.2 (heuristic for "close meaning")
-        IDENTICAL_THRESHOLD = 1e-4 
-        SIMILAR_THRESHOLD = 0.3 # Configurable? keeping simple for now.
+        IDENTICAL_THRESHOLD = 0.05 
+        SIMILAR_THRESHOLD = 0.6 # Configurable? keeping simple for now.
 
         current_time = time.time()
         

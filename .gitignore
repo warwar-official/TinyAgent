@@ -1,3 +1,5 @@
 .env
 **/__pycache__/*
 **/agent_data/*
+**/agent_data_system/memory/*
+**/payloads_log.json
