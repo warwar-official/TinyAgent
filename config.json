@@ -1,4 +1,38 @@
 {
+    "agent": {
+        "model": {
+            "model_id": "gemma-3-27b-it",
+            "provider": "gemini",
+            "api_key": {
+                "available": true,
+                "key_name": "GEMINI_API_KEY"
+            }
+        }
+    },
+    "context": {
+        "prompts_path": "./data/prompts/",
+        "history_path": "./data/history/",
+        "memory": {
+            "active": false,
+            "memory_path": "./data/memory/",
+            "emb_model": {
+                "model_id": "text-embedding-nomic-embed-text-v1.5",
+                "provider": "lmstudio",
+                "api_key": {
+                    "available": false,
+                    "key_name": "KEY_NAME"
+                }
+            },
+            "merge_model": {
+                "model_id": "gemma-3-27b-it",
+                "provider": "gemini",
+                "api_key": {
+                    "available": true,
+                    "key_name": "GEMINI_API_KEY"
+                }
+            }
+        }
+    },
     "tools": [
         {
             "name": "get_current_weather",
@@ -46,21 +80,6 @@
                 },
                 "required": [
                     "url"
-                ]
-            }
-        },
-        {
-            "name": "send_message",
-            "description": "Sends a message to a user interface.",
-            "parameters": {
-                "properties": {
-                    "message": {
-                        "type": "string",
-                        "description": "The message to send."
-                    }
-                },
-                "required": [
-                    "message"
                 ]
             }
         },

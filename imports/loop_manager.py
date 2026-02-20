@@ -1,12 +1,15 @@
 from imports.task_manager import TaskManager
 from imports.models.generative.base_model import BaseAPIModel
+from imports.context_manager import ContextManager
+
+from collections.abc import Callable
 import json
 
 class LoopManager:
-    def __init__(self, model: BaseAPIModel, context_manager: ContextManager, task_manager: TaskManager, tool_table: dict[str, callable]) -> None:
+    def __init__(self, model: BaseAPIModel, context_manager: ContextManager, task_manager: TaskManager, tool_table: dict[str, Callable]) -> None:
         self.context_manager: ContextManager = context_manager
         self.model: BaseAPIModel = model
-        self.tool_table: dict[str, callable] = tool_table
+        self.tool_table: dict[str, Callable] = tool_table
         self.step: int = 0
         self.task_manager: TaskManager = task_manager
 
@@ -82,11 +85,12 @@ class LoopManager:
             "Dont use tools.\n"
             "Dont summarize information about tools."
             )
-        raw_memory_summary = self.perform_single_call(memory_summary_prompt)
-        memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
-        memory_summary_list = json.loads(memory_summary)["important_facts"]
-        for fact in memory_summary_list:
-            self.context_manager.memory.add_memory(fact)
+        if self.context_manager.memory:
+            raw_memory_summary = self.perform_single_call(memory_summary_prompt)
+            memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
+            memory_summary_list = json.loads(memory_summary)["important_facts"]
+            for fact in memory_summary_list:
+                self.context_manager.memory.add_memory(fact)
     
     def _use_tool(self, toolcall: dict) -> None:
         tool_result_template = """[TOOL: {name}] {result} [TOOL_END]"""

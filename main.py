@@ -1,41 +1,32 @@
-from imports.models.generative.gemini import GeminiModel
+"""from imports.models.generative.gemini import GeminiModel
 from imports.models.embeddings.lm_studio import LMStudioEmbeddingModel
 from imports.loop_manager import LoopManager
 from imports.context_manager import ContextManager
 from imports.task_manager import TaskManager
 
-from imports.plugins.memory_RAG import MemoryRAG
+from imports.plugins.memory_RAG import MemoryRAG"""
 
-import os
+from imports import context_manager
+from imports.context_manager_new import ContextManager
+
 import dotenv
 import json
-import importlib
 
 dotenv.load_dotenv()
 
-sys_prompt = """
-Before you perform any actions, read the "identity.md" file. It contains important information about your role and tasks.
+CONFIG_PATH = "config.json"
 
-If question or task not simple, you can use think-mode. For this before the answer make block tagged <think></think>.
-Inside this block follow next steps:
-1. Describe what user ask you to do.
-2. Describe what you know about this task.
-3. Describe what you need to solve this task.
-4. Make draft of the answer.
-After this make answer to user.
+def load_config(path: str) -> dict | None:
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except IOError as e:
+        print(f"Unable to read config! Error: {e}")
+    except json.JSONDecodeError as e:
+        print(f"Unable to decode config! Error: {e}")
+    return None
 
-You can use tools by writing json signature: {"toolcall": {"name":"tool_name", "arguments": []}}
-If you call tool, you will initialize tool loop. So ask questions and make sure you have all information before calling tool.
-
-Available tools:
-
-"""
-
-def load_config() -> dict:
-    with open("config.json", "r") as f:
-        return json.load(f)
-
-def load_tools(config: dict) -> dict:
+"""def load_tools(config: dict) -> dict:
     tool_table = {}
     for tool in config["tools"]:
         tool_name = tool["name"]
@@ -47,13 +38,27 @@ def make_tool_prompt(config: dict) -> str:
     prompt = ""
     for tool in config["tools"]:
         prompt += f"\n{tool['name']}: {tool['description']}\nParameters: {tool['parameters']}\n"
-    return prompt
+    return prompt"""
 
 def main():
-    model = GeminiModel("gemma-3-27b-it", os.getenv("GEMINI_API_KEY"))
+    config = load_config(CONFIG_PATH)
+    if config:
+        try:
+            context_manager = ContextManager(config["context"])
+        except KeyError as e:
+            print(f"Config uncorrect. Error: {e}")
+        except ValueError as e:
+            print(e)
+
+"""def main():
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    if GEMINI_API_KEY:
+        model = GeminiModel("gemma-3-27b-it", GEMINI_API_KEY)
+    else:
+        raise ValueError("EMINI_API_KEY not in .env")
 
     emb_model = LMStudioEmbeddingModel()
-    memory = MemoryRAG("agent_data_system/memory/", emb_model.make_request)
+    memory = None #MemoryRAG("agent_data_system/memory/", emb_model.make_request)
     
     config = load_config()
     tool_table = load_tools(config)
@@ -69,7 +74,7 @@ def main():
         user_input = input("Enter your message: ")
         if user_input == "/bye":
             break
-        loop_manager.perform_loop(user_input)
+        loop_manager.perform_loop(user_input)"""
 
 if __name__ == "__main__":
     main()
