@@ -15,6 +15,7 @@ You should update this file following next form:
 2. **CHARACTER** - describe your character. Ask user for details if it need.
 3. **USER** - describe user. Ask user for details if it need.
 Don't save here information about tools, tasks, memory etc.
+All three section should keep in file after update.
 
 **CHARACTER**
 

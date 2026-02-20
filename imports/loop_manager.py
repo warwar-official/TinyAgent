@@ -10,8 +10,13 @@ class LoopManager:
         self.step: int = 0
         self.task_manager: TaskManager = task_manager
 
+        self.last_answer: str = ""
+
         self.perform_loop(self.context_manager.system_prompt)
         self.perform_system_summary()
+    
+    def get_last_answer(self) -> str:
+        return self.last_answer
     
     def perform_loop(self, initial_prompt: str) -> None:
         self.context_manager.set_current_task(self.task_manager.get_task())
@@ -33,6 +38,7 @@ class LoopManager:
             self.step = 0
             self.perform_memory_summary()
             self.perform_summary()
+        self.last_answer = self.context_manager._remove_thinking(answer)
     
     def perform_single_call(self, prompt: str) -> str:
         payload = self.context_manager.make_payload()
@@ -53,7 +59,7 @@ class LoopManager:
             "Dont use tools.\n"
             "Dont summaryze system or identity information. Concentrate on conversation, facts. If you are doing multi-step task now, describe it to be able to continue it."
         )
-        self.context_manager.conversation_summary = self.perform_single_call(summary_prompt)
+        self.context_manager.conversation_summary = self.context_manager._remove_thinking(self.perform_single_call(summary_prompt))
         self.context_manager.conversation_summary_id = self.context_manager.history.get_records()[-5].id
     
     def perform_system_summary(self) -> None:
@@ -71,6 +77,7 @@ class LoopManager:
             "Please, summarize important inforamtion from this conversation that should be remembered.\n"
             "Summarize facts in 1-2 sentences that could be understood without initial context.\n"
             "Dont summarize meaningless, shorttime information like tool execution results, error logs etc.\n"
+            "If you found nothing meaningful in coversation, feel free to return empty list.\n"
             "Give answer in JSON format with keys: 'important_facts' (list of strings).\n"
             "Dont use tools.\n"
             "Dont summarize information about tools."
@@ -83,6 +90,12 @@ class LoopManager:
     
     def _use_tool(self, toolcall: dict) -> None:
         tool_result_template = """[TOOL: {name}] {result} [TOOL_END]"""
+        tool_summary_prompt = (
+            "Make summary of tool execution result. Extract important information.\n"
+            "Extract facts, important links, names, dates etc.\n"
+            "Summary should not be longer that 500 tokens.\n"
+            "Tool name: {name}, returned result: {result}"
+        )
         if toolcall["name"] in self.tool_table:
             result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
             if len(result) > 1000:
@@ -92,7 +105,7 @@ class LoopManager:
                             "role": "user",
                             "parts": [
                                 {
-                                    "text": f"Make summary of tool execution result. Extract important information. Tool name: {toolcall['name']}, returned result: {result}"
+                                    "text": tool_summary_prompt.format(toolcall["name"], result)
                                 }
                             ]
                         }
