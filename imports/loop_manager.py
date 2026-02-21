@@ -35,7 +35,7 @@ class LoopManager:
             self.history_manager.add_record("model",answer)
             print("model:" + answer.strip())
             toolcall = self._parse_toolcall(answer)
-        if len(self.history_manager.get_records()) > 10:
+        if len(self.history_manager.get_records()) > 15:
             self._perform_summary()
             self.history_manager.set_old_records_mark(5)
 
