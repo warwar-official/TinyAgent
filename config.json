@@ -1,35 +1,39 @@
 {
+    "providers": [
+        {
+            "name": "gemini",
+            "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/",
+            "structure": "google-compatible"
+        },
+        {
+            "name": "lmstudio",
+            "endpoint": "http://192.168.50.212:1234/v1/",
+            "structure": "openai-compatible"
+        }
+    ],
     "agent": {
         "model": {
             "model_id": "gemma-3-27b-it",
             "provider": "gemini",
-            "api_key": {
-                "available": true,
-                "key_name": "GEMINI_API_KEY"
-            }
+            "api_key_name": "GEMINI_API_KEY"
         }
     },
     "context": {
-        "prompts_path": "./data/prompts/",
-        "history_path": "./data/history/",
+        "prompts_path": "./data/prompts.json",
+        "history_path": "./data/history.json",
+        "state_path": "./data/state.json",
         "memory": {
             "active": false,
             "memory_path": "./data/memory/",
             "emb_model": {
                 "model_id": "text-embedding-nomic-embed-text-v1.5",
                 "provider": "lmstudio",
-                "api_key": {
-                    "available": false,
-                    "key_name": "KEY_NAME"
-                }
+                "api_key_name": ""
             },
             "merge_model": {
                 "model_id": "gemma-3-27b-it",
                 "provider": "gemini",
-                "api_key": {
-                    "available": true,
-                    "key_name": "GEMINI_API_KEY"
-                }
+                "api_key_name": "GEMINI_API_KEY"
             }
         }
     },
