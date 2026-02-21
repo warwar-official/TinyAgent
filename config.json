@@ -23,8 +23,8 @@
         "history_path": "./data/history.json",
         "state_path": "./data/state.json",
         "memory": {
-            "active": false,
-            "memory_path": "./data/memory/",
+            "active": true,
+            "db_path": "./data/memory/",
             "emb_model": {
                 "model_id": "text-embedding-nomic-embed-text-v1.5",
                 "provider": "lmstudio",

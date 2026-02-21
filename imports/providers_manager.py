@@ -132,16 +132,16 @@ class ProvidersManager:
         else:
             raise ValueError(f"Unknown structure: {structure}")
 
-    def embeding_request(self, provider: str, model_id: str, API_KEY_NAME: str | None, payload: str) -> list[float]:
-        if provider not in self.providers_dict:
-            raise ValueError(f"Provider '{provider}' not found.")
+    def embeding_request(self, model: Model, payload: str) -> list[float]:
+        if model.provider not in self.providers_dict:
+            raise ValueError(f"Provider '{model.provider}' not found.")
             
-        provider_info = self.providers_dict[provider]
+        provider_info = self.providers_dict[model.provider]
         endpoint = provider_info["endpoint"]
         structure = provider_info["structure"]
         
         headers = {'Content-Type': 'application/json'}
-        api_key = self._get_api_key(API_KEY_NAME)
+        api_key = self._get_api_key(model.api_key_name)
             
         if api_key:
             if structure == "google-compatible":
@@ -151,18 +151,18 @@ class ProvidersManager:
                 
         if structure == "google-compatible":
             request_data = {
-                "model": f"models/{model_id}",
+                "model": f"models/{model.model_id}",
                 "content": {"parts": [{"text": payload}]}
             }
             
             request_url = endpoint
             if not request_url.endswith("/"):
                 request_url += "/"
-            request_url += f"{model_id}:embedContent"
+            request_url += f"{model.model_id}:embedContent"
             
         elif structure == "openai-compatible":
             request_data = {
-                "model": model_id,
+                "model": model.model_id,
                 "input": payload
             }
             

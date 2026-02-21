@@ -1,5 +1,5 @@
 from imports.loop_manager import LoopManager
-
+from prompt_toolkit import PromptSession
 import dotenv
 import json
 
@@ -19,11 +19,12 @@ def load_config(path: str) -> dict | None:
 
 def main():
     config = load_config(CONFIG_PATH)
+    input_session = PromptSession()
 
     if config:
         loop_manager = LoopManager(config)
         while True:
-            user_input = input("Enter your message: ")
+            user_input = input_session.prompt("Enter your message: ")
             if user_input == "/bye":
                 break
             loop_manager.perform_loop(user_input)

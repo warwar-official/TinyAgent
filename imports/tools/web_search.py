@@ -1,9 +1,10 @@
 from requests import request
 import os
 import dotenv
+import time
 dotenv.load_dotenv()
 
-def web_search(query: str, count: int = 3) -> dict:
+def web_search(query: str, count: int = 3) -> str:
     if count > 5:
         count = 5
     headers = {
@@ -16,7 +17,7 @@ def web_search(query: str, count: int = 3) -> dict:
         if response.status_code == 422:
             time.sleep(60)
         else:
-            return {"error": f"Error while searching the web. Status code: {response.status_code}"}
+            return str({"error": f"Error while searching the web. Status code: {response.status_code}"})
         response = request("GET", f"https://api.search.brave.com/res/v1/web/search?q={query}&country=US&search_lang=en&count={count}", headers=headers)
     response_json = response.json()
     
@@ -45,4 +46,4 @@ def web_search(query: str, count: int = 3) -> dict:
             })
     
 
-    return result
+    return str(result)

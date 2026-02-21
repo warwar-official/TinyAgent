@@ -1,5 +1,7 @@
 from imports.history_manager import HistoryManager, HistoryRecord
 from imports.providers_manager import ProvidersManager, Model
+from imports.memory_manager import MemoryManager
+from datetime import datetime
 import json
 import importlib
 import re
@@ -11,6 +13,11 @@ class LoopManager:
         self.providers_manager = ProvidersManager(self.config["providers"])
         self.model = Model(**self.config["agent"]["model"])
         self.history_manager = HistoryManager(self.config["context"]["history_path"])
+        if self.config["context"]["memory"]["active"]:
+            self.memory = MemoryManager(self.config)
+        else:
+            self.memory = None
+        self.retrived_memory = "None"
         self.prompts = self._load_prompts(self.config["context"]["prompts_path"])
         self.state = self._load_state(self.config["context"]["state_path"])
 
@@ -22,6 +29,10 @@ class LoopManager:
         self.tool_description = self._make_tool_description(self.config)
 
     def perform_loop(self, user_input: str) -> None:
+        if self.memory:
+            self.retrived_memory = self.memory.search(user_input)
+            if self.retrived_memory == []:
+                self.retrived_memory = "None"
         self.history_manager.add_record("user",user_input)
         payload = self._make_general_payload()
         answer = self.providers_manager.generation_request(self.model, payload)
@@ -37,6 +48,8 @@ class LoopManager:
             toolcall = self._parse_toolcall(answer)
         if len(self.history_manager.get_records()) > 15:
             self._perform_summary()
+            if self.config["context"]["memory"]["active"]:
+                self._summaries_memory()
             self.history_manager.set_old_records_mark(5)
 
     def _perform_summary(self) -> None:
@@ -45,6 +58,17 @@ class LoopManager:
         answer = self.providers_manager.generation_request(self.model, payload)
         self.state["conversation_summary"] = self._remove_thinking(answer)
         self._save_state(self.config["context"]["state_path"])
+    
+    def _summaries_memory(self) -> None:
+        memory_symmary_prompt = self.prompts["memory_summary_prompt"]
+        payload = self.history_manager.get_records() + [HistoryRecord("user", memory_symmary_prompt)]
+        raw_memory_summary = self.providers_manager.generation_request(self.model, payload)
+        memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
+        memory_summary_list = json.loads(memory_summary)["important_facts"]
+        print("\n" + str(memory_summary_list) + "\n")
+        for fact in memory_summary_list:
+            if self.memory:
+                self.memory.add_memory(fact.strip())
 
     def _make_general_payload(self) -> list[HistoryRecord]:
         system_prompt = (
@@ -54,7 +78,10 @@ class LoopManager:
             "# TECHNICAL SECTION\n\n"
             f"{self.prompts['ability_prompt']}\n\n"
             f"{self.prompts['tools_prompt']}\n"
-            f"{self.tool_description}\n"
+            f"{self.tool_description}\n\n"
+            "# RUNTIME STATE\n\n"
+            f"Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Retrived memories:\n{self.retrived_memory}\n"
             "[END_SYSTEM]\n"
         )
         system_record = [HistoryRecord("system", system_prompt)]
