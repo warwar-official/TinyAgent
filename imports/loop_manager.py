@@ -28,7 +28,7 @@ class LoopManager:
         self.tool_table = self._load_tools(self.config)
         self.tool_description = self._make_tool_description(self.config)
 
-    def perform_loop(self, user_input: str) -> None:
+    def perform_loop(self, user_input: str) -> str:
         if self.memory:
             self.retrived_memory = self.memory.search(user_input)
             if self.retrived_memory == []:
@@ -44,13 +44,13 @@ class LoopManager:
             payload = self._make_general_payload()
             answer = self.providers_manager.generation_request(self.model, payload)
             self.history_manager.add_record("model",answer)
-            print("model:" + answer.strip())
             toolcall = self._parse_toolcall(answer)
         if len(self.history_manager.get_records()) > 15:
             self._perform_summary()
             if self.config["context"]["memory"]["active"]:
                 self._summaries_memory()
             self.history_manager.set_old_records_mark(5)
+        return self._remove_thinking(answer.strip())
 
     def _perform_summary(self) -> None:
         conversation_summary_prompt = self.prompts["conversation_summary_prompt"]

@@ -37,6 +37,11 @@
             }
         }
     },
+    "plugins": {
+        "telegram": {
+            "secret_path": "./data/telegram_secret.json"
+        }
+    },
     "tools": [
         {
             "name": "get_current_weather",

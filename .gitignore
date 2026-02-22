@@ -4,4 +4,5 @@ data/mnt/*
 data/memory/*
 data/history.json
 data/state.json
+data/telegram_secret.json
 payloads_log.json
