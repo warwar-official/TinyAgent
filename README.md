@@ -38,6 +38,13 @@ Settings are managed within `config.json`.
 - Configure tool descriptions and parameters under `"tools"`.
 - Configure memory models, storage locations, and flags under `"context"`. By default, the memory database uses `./data/memory/` and session dialogue history resides in `./data/history.json`.
 
+### Telegram Frontend Integration
+TinyAgent supports interacting via Telegram! To use it:
+1. Ensure `pyTelegramBotAPI` is installed (`pip install -r requirements.txt`).
+2. Add your Telegram Bot Token to your `.env` file as `TELEGRAM_BOT_TOKEN="your_token_here"`.
+3. In `main.py`, set `USE_TELEGRAM_FRONTEND = True`.
+4. Run the script. A one-time link will be printed to your console. Click the link to securely initialize your chat session with the bot.
+
 *Note: For safe usage, the agent attempts to read/write files primarily inside a controlled path space (`./data/mnt/`).*
 
 ## Running TinyAgent

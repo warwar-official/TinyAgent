@@ -50,6 +50,10 @@ def bot_process(request_queue: queue.Queue, secret_path: str):
     else:
         request_queue.put(TelegramBotMessage("report", "Bot is not initialized"))
 
+def stop_bot():
+    if bot:
+        bot.stop_polling()
+
 @dataclass
 class TelegramBotMessage:
     type: str
