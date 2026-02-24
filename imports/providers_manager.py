@@ -25,7 +25,7 @@ class ProvidersManager:
     def _render_google_compatible_payload(self, payload: list[HistoryRecord]) -> dict:
         contents = []
         for record in payload:
-            role = "user" if record.role.lower() in ["user", "tool"] else "model"
+            role = "user" if record.role.lower() in ["user", "tool", "system"] else "model"
             contents.append({
                 "role": role,
                 "parts": [{"text": record.message}]
@@ -126,7 +126,11 @@ class ProvidersManager:
         response_data = self._execute_request_with_retries(req)
         
         if structure == "google-compatible":
-            return response_data["candidates"][0]["content"]["parts"][0]["text"]
+            try:
+                return response_data["candidates"][0]["content"]["parts"][0]["text"]
+            except KeyError:
+                print(response_data)
+                raise RuntimeError("Google API returned unexpected response format.")
         elif structure == "openai-compatible":
             return response_data["choices"][0]["message"]["content"]
         else:

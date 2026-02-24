@@ -1,6 +1,16 @@
 from requests import request
 
-def get_current_weather(location: str) -> dict:
+def current_weather(location: str) -> dict:
+    tool_answer = {
+        "tool_name": "current_weather",
+        "tool_arguments": {
+            "location": location
+        },
+        "tool_result": None,
+        "truncate": False,
+        "error": None
+    }
+
     headers = {
         "User-Agent": "TinyAgent"
     }
@@ -20,6 +30,9 @@ def get_current_weather(location: str) -> dict:
                 "is_day": weather_json["current_weather"]["is_day"],
                 "time": weather_json["current_weather"]["time"],
             }
-            return answer
-        return {"error": "Weather not found"}
-    return {"error": "Location not found"}
+            tool_answer["tool_result"] = answer
+        else:
+            tool_answer["error"] = "Weather not found"
+    else:
+        tool_answer["error"] = "Location not found"
+    return tool_answer

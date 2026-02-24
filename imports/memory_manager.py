@@ -53,7 +53,7 @@ class MemoryManager:
         return results
 
     def add_memory(self, memory: str):
-        IDENTICAL_THRESHOLD = 0.1
+        IDENTICAL_THRESHOLD = 0.15
         SIMILAR_THRESHOLD = 0.6
 
         vector = np.array([self.providers_manager.embeding_request(self.emb_model, memory)], dtype='float32')

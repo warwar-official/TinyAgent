@@ -4,7 +4,19 @@ import dotenv
 import time
 dotenv.load_dotenv()
 
-def web_search(query: str, count: int = 3) -> str:
+def web_search(query: str, count: int = 3) -> dict:
+
+    tool_answer = {
+        "tool_name": "web_search",
+        "tool_arguments": {
+            "query": query,
+            "count": count
+        },
+        "tool_result": None,
+        "truncate": False,
+        "error": None
+    }
+
     if count > 5:
         count = 5
     headers = {
@@ -17,7 +29,8 @@ def web_search(query: str, count: int = 3) -> str:
         if response.status_code == 422:
             time.sleep(60)
         else:
-            return str({"error": f"Error while searching the web. Status code: {response.status_code}"})
+            tool_answer["error"] = f"Error while searching the web. Status code: {response.status_code}"
+            return tool_answer
         response = request("GET", f"https://api.search.brave.com/res/v1/web/search?q={query}&country=US&search_lang=en&count={count}", headers=headers)
     response_json = response.json()
     
@@ -45,5 +58,5 @@ def web_search(query: str, count: int = 3) -> str:
                 "age": web.get("age", "")
             })
     
-
-    return str(result)
+    tool_answer["tool_result"] = result
+    return tool_answer

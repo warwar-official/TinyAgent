@@ -7,10 +7,11 @@ from imports.plugins.telegram import bot_responce, bot_process, stop_bot, Telegr
 from threading import Thread
 import json
 import queue
-
+import time
 
 CONFIG_PATH = "config.json"
 USE_TELEGRAM_FRONTEND = True
+AUTONOMOUS_LOOP_INTERVAL = 0
 
 def load_config(path: str) -> dict | None:
     try:
@@ -30,12 +31,20 @@ def concole_input_loop(request_queue: queue.Queue):
             break
         request_queue.put(TelegramBotMessage("message", user_input, "console"))
 
+def autonomous_loop(request_queue: queue.Queue):
+    if AUTONOMOUS_LOOP_INTERVAL > 0:
+        while True:
+            request_queue.put(TelegramBotMessage("action", "autonomous_loop", "console"))
+            time.sleep(AUTONOMOUS_LOOP_INTERVAL)
+
 def main():
     config = load_config(CONFIG_PATH)
     request_queue = queue.Queue()
 
     if config:
         loop_manager = LoopManager(config)
+        autonomous_thread = Thread(target=autonomous_loop, args=(request_queue,), daemon=True)
+        autonomous_thread.start()
         if USE_TELEGRAM_FRONTEND:
             front_end_thread = Thread(target=bot_process, args=(request_queue, config["plugins"]["telegram"]["secret_path"]), daemon=True)
             front_end_thread.start()
@@ -53,14 +62,17 @@ def main():
                         bot_responce(answer, message.chat_id)
                 elif message.type == "report":
                     print(message.message)
+                elif message.type == "action":
+                    if message.message == "autonomous_loop":
+                        loop_manager.autonomus_loop()
+                else:
+                    print(f"Unknown message type: {message.type}")
             except KeyboardInterrupt:
                 if USE_TELEGRAM_FRONTEND:
                     print("\nStopping Telegram bot...")
                     stop_bot()
                 else:
                     print("\nShutting down console loop...")
-                
-                # Daemon thread will gracefully die with the main thread
                 break
 
 if __name__ == "__main__":

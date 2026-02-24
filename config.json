@@ -44,7 +44,7 @@
     },
     "tools": [
         {
-            "name": "get_current_weather",
+            "name": "current_weather",
             "description": "Gets the current weather for a given location.",
             "parameters": {
                 "properties": {
@@ -78,8 +78,8 @@
             }
         },
         {
-            "name": "fetch_url",
-            "description": "Fetches the content of a URL, returning clean text, links, and table data. It is not rendering images or scripts.",
+            "name": "web_fetch",
+            "description": "Fetches the content of internet souces by URL. Returns clean text, links, and table data. It is not rendering images or scripts.",
             "parameters": {
                 "properties": {
                     "url": {
@@ -93,37 +93,46 @@
             }
         },
         {
-            "name": "read_file",
-            "description": "Reads a file.",
-            "parameters": {
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "The path to the file."
-                    }
-                },
-                "required": [
-                    "path"
-                ]
-            }
-        },
-        {
-            "name": "write_file",
-            "description": "Writes a file.",
+            "name": "file_io",
+            "description": "Performs file operations in filesystem (read, write, append).",
             "parameters": {
                 "properties": {
                     "path": {
                         "type": "string",
                         "description": "The path to the file."
                     },
+                    "mode": {
+                        "type": "string",
+                        "description": "The mode to open the file in. Valid values: 'r' (read), 'w' (write), 'a' (append).",
+                        "enum": [
+                            "r",
+                            "w",
+                            "a"
+                        ]
+                    },
                     "content": {
                         "type": "string",
-                        "description": "The content to write to the file."
+                        "description": "The content to write to the file (only used in 'w' or 'a' modes)."
                     }
                 },
                 "required": [
                     "path",
-                    "content"
+                    "mode"
+                ]
+            }
+        },
+        {
+            "name": "file_list",
+            "description": "Lists the files in a directory.",
+            "parameters": {
+                "properties": {
+                    "dir": {
+                        "type": "string",
+                        "description": "The path to the directory."
+                    }
+                },
+                "required": [
+                    "dir"
                 ]
             }
         }

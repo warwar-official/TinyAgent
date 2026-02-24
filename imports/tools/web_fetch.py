@@ -48,11 +48,22 @@ class PageContentParser(HTMLParser):
                 if self.in_table:
                     self.current_table_text.append(text)
 
-def fetch_url(url: str) -> str:
+def web_fetch(url: str) -> dict:
     """
     Fetches the content of a URL, returning clean text, links, and table data as a string.
     Ignores headers, footers, navigation, scripts, and styles.
     """
+
+    tool_answer = {
+        "tool_name": "fetch_web",
+        "tool_arguments": {
+            "url": url
+        },
+        "tool_result": None,
+        "truncate": False,
+        "error": None
+    }
+
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; TinyAgent/1.0)'
@@ -63,7 +74,12 @@ def fetch_url(url: str) -> str:
         # Check content type, only parse HTML
         content_type = response.headers.get('Content-Type', '').lower()
         if 'text/html' not in content_type:
-            return f"Content-Type: {content_type}\n\n{response.text[:10000]}"
+            if len(response.text) > 10000:
+                tool_answer["truncate"] = True
+                tool_answer["tool_result"] = f"Content-Type: {content_type}\n\n{response.text[:10000]}... (truncated)"
+            else:
+                tool_answer["tool_result"] = f"Content-Type: {content_type}\n\n{response.text}"
+            return tool_answer
 
         parser = PageContentParser()
         parser.feed(response.text)
@@ -88,7 +104,14 @@ def fetch_url(url: str) -> str:
             unique_links = list(set(parser.links))
             output_parts.append("\n".join(unique_links))
             
-        return "\n".join(output_parts)
+        result = "\n".join(output_parts)
+        if len(result) > 10000:
+            tool_answer["truncate"] = True
+            tool_answer["tool_result"] = result[:10000] + "\n... (truncated)"
+        else:
+            tool_answer["tool_result"] = result
+        return tool_answer
 
     except Exception as e:
-        return f"Error fetching URL: {str(e)}"
+        tool_answer["error"] = str(e)
+        return tool_answer
