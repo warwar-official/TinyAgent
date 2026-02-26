@@ -42,20 +42,22 @@ def main():
     request_queue = queue.Queue()
 
     if config:
-        loop_manager = LoopManager(config)
-        autonomous_thread = Thread(target=autonomous_loop, args=(request_queue,), daemon=True)
-        autonomous_thread.start()
         if USE_TELEGRAM_FRONTEND:
             front_end_thread = Thread(target=bot_process, args=(request_queue, config["plugins"]["telegram"]["secret_path"]), daemon=True)
             front_end_thread.start()
         else:
             front_end_thread = Thread(target=concole_input_loop, args=(request_queue,), daemon=True)
             front_end_thread.start()
+
+        autonomous_thread = Thread(target=autonomous_loop, args=(request_queue,), daemon=True)
+        autonomous_thread.start()
+
+        loop_manager = LoopManager(config)
         while True:
             try:
                 message = request_queue.get()
                 if message.type == "message":
-                    answer = loop_manager.perform_loop(message.message)
+                    answer = loop_manager.router(message.message)
                     if message.chat_id == "console":
                         print(f"model: {answer}")
                     else:
@@ -65,6 +67,9 @@ def main():
                 elif message.type == "action":
                     if message.message == "autonomous_loop":
                         loop_manager.autonomus_loop()
+                    elif message.message == "init":
+                        answer = loop_manager.inti_agent()
+                        bot_responce(answer, message.chat_id)
                 else:
                     print(f"Unknown message type: {message.type}")
             except KeyboardInterrupt:

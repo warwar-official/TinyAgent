@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import md5
+import os
 import json
+
+DEBUG = os.getenv("DEBUG", "False")
 
 @dataclass
 class HistoryRecord:
@@ -39,6 +42,8 @@ class HistoryManager:
 
     def add_record(self, role: str, message: str) -> None:
         new_record = HistoryRecord(role, message.strip())
+        if DEBUG:
+            print(f"Adding record: {new_record}")
         self.history.append(new_record)
         self.save_history()
     
@@ -49,15 +54,16 @@ class HistoryManager:
         records_list = self.history[0 - count:]
         return records_list
     
+    def get_last_record(self, role: str) -> HistoryRecord | None:
+        result = None 
+        for record in self.history[-10:]:
+            if record.role == role:
+                result = record
+        return result
+    
     def set_old_records_mark(self, offset: int = 0) -> None:
         self.old_records_mark = len(self.history) - offset
         self.save_history()
-    
-    def get_record_position(self, record_hash: str) -> int:
-        for i, record in enumerate(self.history):
-            if record.hash == record_hash:
-                return i
-        return -1
 
     def wipe_history(self) -> None:
         self.history = []

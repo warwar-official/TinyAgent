@@ -1,72 +1,179 @@
+from imports import task_manager
 from imports.history_manager import HistoryManager, HistoryRecord
 from imports.providers_manager import ProvidersManager, Model
 from imports.memory_manager import MemoryManager
+from imports.task_manager import TaskManager
 from datetime import datetime, timedelta
 import json
 import importlib
 import re
 
+STEP_PER_TASK_LIMIT = 15
+SUMMARIZE_LEN = 15
+MIN_SUMURIZE_LEN = 7
+
 class LoopManager:
     def __init__(self, config: dict) -> None:
+        # Save config, we need it farther
         self.config = config
+        # Base components
         self.providers_manager = ProvidersManager(self.config["providers"])
         self.model = Model(**self.config["agent"]["model"])
-        self.history_manager = HistoryManager(self.config["context"]["history_path"])
+        self.conversation_history = HistoryManager(self.config["context"]["conversation_history_path"])
+        # Task components
+        self.task_history = HistoryManager(self.config["context"]["task_history_path"])
+        self.task_manager = TaskManager(self.config["context"]["tasks_path"])
+        self._load_callbacks()
+        # Memory manager
         if self.config["context"]["memory"]["active"]:
             self.memory = MemoryManager(self.config)
         else:
             self.memory = None
+        # Prompts and state 
         self.retrived_memory = "None"
         self.prompts = self._load_prompts(self.config["context"]["prompts_path"])
         self.state = self._load_state(self.config["context"]["state_path"])
-        if self.state["identity"] == "":
-            self._identity_setup()
-            self._save_state(self.config["context"]["state_path"])
+        # Tools
         self.tool_table = self._load_tools(self.config)
         self.tool_description = self._make_tool_description(self.config)
 
-    def perform_loop(self, user_input: str) -> str:
-        self._retrive_memory(user_input)
+    def inti_agent(self):
+        if self.state["state"] == "none":
+            self.state["state"] = "task"
+            self.state["identity"] = self.prompts["default_identity_prompt"]
+            self.state["current_task"] = "identity_setup"
+            self.task_manager.activate_task("identity_setup")
+            return self._task_loop("")
+        else:
+            return "Agent already initialized."
 
-        self.history_manager.add_record("user",user_input)
-        payload = self._make_payload()
+    def router(self, user_input: str) -> str:
+        if self.state["state"] == "ready":
+            self._retrive_memory(user_input)
+            answer = self._request_loop(user_input)
+        elif self.state["state"] == "task":
+            answer =  self._task_loop(user_input)
+        else:
+            answer = "Agent not initialized. Start commant '/init'."
+        return answer 
+
+    def _task_loop(self, input: str) -> str:
+        def _check_and_clear(answer: str) -> bool:
+            if self.task_manager.is_task_completed(self.state["current_task"]):
+                self.state["state"] = "ready"
+                self.state["current_task"] = "none"
+                self._save_state(self.config["context"]["state_path"])
+                return True
+            return False
+        input = "Interpret this message in context of your current task: " + input
+        try:
+            instruction = ""
+            if self.task_manager.get_task_status(self.state["current_task"]) == "active":
+                instruction = self.task_manager.get_next_instruction(self.state["current_task"])
+                stop_word = self.task_manager.get_stop_word(self.state["current_task"])
+                instruction += f"\nWhen you done with this task, say \"{stop_word}\" to go to the next step. This phrase system valuable. so don't use it in another meaning except finishing step."
+                input = instruction
+            is_interactive = self.task_manager.is_interactive(self.state["current_task"])
+        except Exception as e:
+            return str(e)
+        if is_interactive:
+            answer = self._request_loop(input, task=True, tool_available=self.task_manager.get_tool_available(self.state["current_task"]))
+            if self.task_manager.get_stop_word(self.state["current_task"]) in answer:
+                answer = answer.replace(self.task_manager.get_stop_word(self.state["current_task"]), "")
+                print("NEXT STEP")
+                self.task_manager.next_step(self.state["current_task"])
+                if _check_and_clear(answer):
+                    return answer
+                self._summarise(task=True, memory=False)
+                return self._task_loop("")
+            return answer
+        else:
+            for i in range(STEP_PER_TASK_LIMIT):
+                answer = self._request_loop(input, task=True, tool_available=self.task_manager.get_tool_available(self.state["current_task"]))
+                if self.task_manager.get_stop_word(self.state["current_task"]) in answer:
+                    answer = answer.replace(self.task_manager.get_stop_word(self.state["current_task"]), "")
+                    print("NEXT STEP")
+                    self.task_manager.next_step(self.state["current_task"])
+                    if _check_and_clear(answer):
+                        return "Task completed."
+                    else:
+                        self._summarise(task=True, memory=False)
+                        instruction = self.task_manager.get_next_instruction(self.state["current_task"])
+                        if instruction:
+                            input = instruction
+                        else:
+                            raise Exception("Unexpected behavior betwen steps. Step without instruction.")
+                else:
+                    input = "Make your next step."
+            return "Loop exceed limit of steps per task. But task was not completed."
+
+    def _request_loop(self, input: str, task: bool = False, tool_available: bool = True) -> str:
+        def _add_record(type: str, message: str) -> None:
+            if task:
+                self.task_history.add_record(type,message)
+            else:
+                self.conversation_history.add_record(type,message)
+        _add_record("user",input)
+        if task:
+            payload = self._make_payload(tool=tool_available, history=True, task=True)
+        else:
+            payload = self._make_payload()
         answer = self.providers_manager.generation_request(self.model, payload)
-        self.history_manager.add_record("model",answer)
-        print("model:" + answer.strip())
+        _add_record("model",answer)
         toolcall = self._parse_toolcall(answer)
         while toolcall:
             tool_result = self._use_tool(toolcall)
-            self.history_manager.add_record("tool",self.prompts["tool_result_template"].format(name=toolcall["name"], result=tool_result))
-            payload = self._make_payload()
+            _add_record("tool",self.prompts["tool_result_template"].format(name=toolcall["name"], result=tool_result))
+            if task:
+                payload = self._make_payload(tool=tool_available, history=True, task=True)
+            else:
+                payload = self._make_payload()
             answer = self.providers_manager.generation_request(self.model, payload)
-            self.history_manager.add_record("model",answer)
+            _add_record("model",answer)
             toolcall = self._parse_toolcall(answer)
-        if len(self.history_manager.get_records()) > 15:
-            self._summarise()
+        if task:
+            if len(self.task_history.get_records()) > SUMMARIZE_LEN:
+                self._summarise(task=True)
+        else:
+            if len(self.conversation_history.get_records()) > SUMMARIZE_LEN:
+                self._summarise()
         return self._remove_thinking(answer.strip())
 
-    def _summarise(self) -> None:
-        conversation_summary_prompt = self.prompts["conversation_summary_prompt"]
-        prev_records = self.history_manager.get_records()
-        if len(prev_records) < 7:
-            print("Not enough records to summarise.")
-            return
+    def _summarise(self, task: bool = False, memory: bool = True) -> None:
+        if task:
+            conversation_summary_prompt = self.prompts["task_summary_prompt"]
+            prev_records = self.task_history.get_records()
+            prev_records.insert(0, HistoryRecord("model", "Current task summary: " + self.state["task_summary"]))
+        else:
+            conversation_summary_prompt = self.prompts["conversation_summary_prompt"]
+            prev_records = self.conversation_history.get_records()
+            if len(prev_records) < MIN_SUMURIZE_LEN:
+                print("Not enough records to summarise.")
+                return
+            prev_records.insert(0, HistoryRecord("model", "Current conversation summary: " + self.state["conversation_summary"]))
         payload = prev_records + [HistoryRecord("user", conversation_summary_prompt)]
         answer = self.providers_manager.generation_request(self.model, payload)
-        self.state["conversation_summary"] = self._remove_thinking(answer)
+        if task:
+            self.state["task_summary"] = self._remove_thinking(answer)
+        else:
+            self.state["conversation_summary"] = self._remove_thinking(answer)
         self._save_state(self.config["context"]["state_path"])
 
-        if self.config["context"]["memory"]["active"]:
-            memory_symmary_prompt = self.prompts["memory_summary_prompt"]
-            payload = self.history_manager.get_records() + [HistoryRecord("user", memory_symmary_prompt)]
-            raw_memory_summary = self.providers_manager.generation_request(self.model, payload)
-            memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
-            memory_summary_list = json.loads(memory_summary)["important_facts"]
-            print("\n" + str(memory_summary_list) + "\n")
-            for fact in memory_summary_list:
-                if self.memory:
-                    self.memory.add_memory(fact.strip())
-        self.history_manager.set_old_records_mark(5)
+        if memory:
+            if self.config["context"]["memory"]["active"]:
+                memory_symmary_prompt = self.prompts["memory_summary_prompt"]
+                payload = self.conversation_history.get_records() + [HistoryRecord("user", memory_symmary_prompt)]
+                raw_memory_summary = self.providers_manager.generation_request(self.model, payload)
+                memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
+                memory_summary_list = json.loads(memory_summary)["important_facts"]
+                print("\n" + str(memory_summary_list) + "\n")
+                for fact in memory_summary_list:
+                    if self.memory:
+                        self.memory.add_memory(fact.strip())
+        if task:
+            self.task_history.set_old_records_mark(0)
+        else:
+            self.conversation_history.set_old_records_mark(5)
 
     def _retrive_memory(self, user_input: str) -> None:
         if self.memory:
@@ -74,17 +181,22 @@ class LoopManager:
             if self.retrived_memory == []:
                 self.retrived_memory = "None"
 
-    def _make_payload(self, tool: bool = True, ability: bool = True, history: bool = True) -> list[HistoryRecord]:
+    def _make_payload(self, tool: bool = True, history: bool = True, task: bool = False) -> list[HistoryRecord]:
+        """
+        Make payload for model request
+        """
+
+        # Tool description
         if tool:
             tool_description = self.tool_description
         else:
             tool_description = ""
-        if ability:
-            ability_description = self.prompts["ability_prompt"]
-        else:
-            ability_description = ""
-        last_message_time = self.history_manager.get_records(1)[0].create_time
-        if last_message_time:
+        # Ability description 
+        ability_description = self.prompts["ability_prompt"]
+        # Last message time 
+        last_user_message = self.conversation_history.get_last_record("user")
+        if last_user_message:
+            last_message_time = last_user_message.create_time
             time_diff = datetime.now() - last_message_time
             if time_diff < timedelta(minutes=1):
                 last_message_time_str = f"{time_diff.seconds // 60} minutes ago"
@@ -96,6 +208,7 @@ class LoopManager:
                 last_message_time_str = f"{time_diff.days // 30} months ago"
         else:
             last_message_time_str = "No previous messages"
+        # System prompt 
         system_prompt = (
             "[SYSTEM]\n\n"
             "# IDENTITY SECTION\n\n"
@@ -111,11 +224,34 @@ class LoopManager:
             f"Notes from the autonomus loop:\n{self.state['autonomuse_notes']}\n"
             "[END_SYSTEM]\n"
         )
+
+        if task:
+            stop_word = self.task_manager.get_stop_word(self.state["current_task"])
+            task_instruction = self.task_manager.get_next_instruction(self.state["current_task"])
+            task_instruct = (
+                "[TASK]\n"
+                f"You are performing task now. Follow the instructions.\n"
+                f"Task: \"{task_instruction}\"\n"
+                f"When you done with this task, say \"{stop_word}\" to go to the next step. This phrase system valuable. so don't use it in another meaning except finishing step."
+                "[END_TASK]"
+            )
+        else:
+            task_instruct = ""
+        system_prompt += task_instruct
         system_record = [HistoryRecord("system", system_prompt)]
-        if self.state["conversation_summary"] != "":
-            system_record.append(HistoryRecord("model", self.state["conversation_summary"]))
+        # Conversation summary
+        if task:
+            if self.state["task_summary"] != "":
+                system_record.append(HistoryRecord("model", self.state["task_summary"]))
+        else:
+            if self.state["conversation_summary"] != "":
+                system_record.append(HistoryRecord("model", self.state["conversation_summary"]))
+        # History 
         if history:
-            payload = system_record + self.history_manager.get_records()
+            if task:
+                payload = system_record + self.task_history.get_records()
+            else:
+                payload = system_record + self.conversation_history.get_records()
         else:
             payload = system_record
         return payload
@@ -149,42 +285,22 @@ class LoopManager:
     
     def _init_state(self) -> dict:
         return {
-            "identity": "",
+            "state": "none",
+            "identity": self.prompts["default_identity_prompt"],
             "conversation_summary": "",
-            "autonomuse_notes": ""
+            "task_summary": "",
+            "autonomuse_notes": "",
+            "current_task": "none"
         }
     
-    def _identity_setup(self) -> None:
-        print("Identity setup started...")
-        self.history_manager.add_record("user",self.prompts["initial_prompt"])
-        payload = self.history_manager.get_records()
-        answer = self.providers_manager.generation_request(self.model, payload)
-        self.history_manager.add_record("model",answer)
-        print("model:" + answer.strip())
-        while True:
-            user_input = input("Enter your message: ")
-            if user_input == "/bye":
-                break
-            self.history_manager.add_record("user",user_input)
-            payload = self.history_manager.get_records()
-            answer = self.providers_manager.generation_request(self.model, payload)
-            self.history_manager.add_record("model",answer)
-            toolcall = self._parse_toolcall(answer)
-            if toolcall:
-                if toolcall["name"] == "update_identity":
-                    identity = toolcall["arguments"]["identity"]
-                    self.history_manager.wipe_history()
-                    self.history_manager.add_record("model",identity)
-                    self.history_manager.add_record("user",self.prompts["character_setup_prompt"])
-                    payload = self.history_manager.get_records()
-                    answer = self.providers_manager.generation_request(self.model, payload)
-                    self.state["identity"] = answer
-                    self.history_manager.wipe_history()
-                    print("Identity setup complete. Starting conversation...")
-                    break
-                else:
-                    print(f"Unknown toolcall: {toolcall['name']}")
-            print("model:" + answer.strip())
+    def _load_callbacks(self) -> None:
+        self.callbacks = {
+            "identity_setup": self._identity_setup,
+        }
+    
+    def _identity_setup(self, answer: str) -> None:
+        self.state["identity"] = answer
+        self._save_state(self.config["context"]["state_path"])
     
     def autonomus_loop(self) -> None:
         print("Autonomus loop started...")
@@ -286,12 +402,15 @@ class LoopManager:
         tool_summary_prompt = self.prompts["tool_summary_prompt"]
         result = ""
         if toolcall["name"] in self.tool_table:
-            result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
-            if result["tool_result"]:
-                if len(result["tool_result"]) > 2500:
-                    payload = [HistoryRecord("user", tool_summary_prompt.format(toolcall["name"], result["tool_result"]))]
-                    result["tool_result"] = self.providers_manager.generation_request(self.model, payload)
-                    result["summarized"] = True
+            try:
+                result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
+                if result["tool_result"]:
+                    if len(result["tool_result"]) > 2500:
+                        payload = [HistoryRecord("user", tool_summary_prompt.format(toolcall["name"], result["tool_result"]))]
+                        result["tool_result"] = self.providers_manager.generation_request(self.model, payload)
+                        result["summarized"] = True
+            except Exception as e:
+                result={"tool_name": toolcall["name"], "tool_arguments": toolcall["arguments"], "tool_result": None, "truncate": False, "error": str(e)}
         else:
             result={"tool_name": toolcall["name"], "tool_arguments": toolcall["arguments"], "tool_result": None, "truncate": False, "error": "Error: Tool not found"}
         print("tool:" + str(result))

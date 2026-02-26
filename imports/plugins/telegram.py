@@ -10,6 +10,9 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 if TOKEN:
     bot = telebot.TeleBot(TOKEN)
+    bot.set_my_commands([
+        telebot.types.BotCommand("init", "Initialize agent"),
+    ])
 else:
     bot = None
 
@@ -38,6 +41,14 @@ def bot_process(request_queue: queue.Queue, secret_path: str):
                     bot.send_message(message.chat.id, "Invalid token")
                     bot.delete_state(message.chat.id)
                 bot.send_message(message.chat.id, "Token added")
+
+        @bot.message_handler(commands=["init"])
+        def init_agent(message):
+            if secret_keeper.check_user(message.from_user.id):
+                request_queue.put(TelegramBotMessage("action", "init", message.chat.id))
+                bot.send_chat_action(message.chat.id, "typing")
+            else:
+                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
 
         @bot.message_handler(func=lambda message: True)
         def hendle_message(message):

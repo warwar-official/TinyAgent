@@ -2,7 +2,7 @@
 **/__pycache__/*
 data/mnt/*
 data/memory/*
-data/history.json
+data/history/*
 data/state.json
 data/telegram_secret.json
 payloads_log.json

@@ -20,7 +20,9 @@
     },
     "context": {
         "prompts_path": "./data/prompts.json",
-        "history_path": "./data/history.json",
+        "conversation_history_path": "./data/history/conversation_history.json",
+        "task_history_path": "./data/history/task_history.json",
+        "tasks_path": "./data/history/tasks.json",
         "state_path": "./data/state.json",
         "memory": {
             "active": true,
