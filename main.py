@@ -10,7 +10,7 @@ import queue
 import time
 
 CONFIG_PATH = "config.json"
-USE_TELEGRAM_FRONTEND = True
+USE_TELEGRAM_FRONTEND = False
 AUTONOMOUS_LOOP_INTERVAL = 0
 
 def load_config(path: str) -> dict | None:
@@ -53,6 +53,7 @@ def main():
         autonomous_thread.start()
 
         loop_manager = LoopManager(config)
+        
         while True:
             try:
                 message = request_queue.get()
@@ -66,7 +67,7 @@ def main():
                     print(message.message)
                 elif message.type == "action":
                     if message.message == "autonomous_loop":
-                        loop_manager.autonomus_loop()
+                        loop_manager.autonomous_loop()
                     elif message.message == "init":
                         answer = loop_manager.inti_agent()
                         bot_responce(answer, message.chat_id)

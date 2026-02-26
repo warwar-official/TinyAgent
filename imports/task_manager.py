@@ -74,41 +74,19 @@ class TaskManager:
         self.tasks.append(task)
         self._save_tasks()
     
-    def get_next_instruction(self, name: str) -> str:
+    def get_current_subtask(self, name: str) -> SubTask:
         for task in self.tasks:
             if task.name == name:
-                if task.status == "active" or task.status == "processing":
+                if task.status in ("active", "processing"):
                     task.status = "processing"
                     self._save_tasks()
-                    return task.subtasks[task.current_step].instruction
-                elif task.status == "processing":
-                    return ""
+                    return task.subtasks[task.current_step]
         raise Exception("Task not found")
     
     def get_task_status(self, name: str) -> str:
         for task in self.tasks:
             if task.name == name:
                 return task.status
-        raise Exception("Task not found")
-    
-    def get_tool_available(self, name: str) -> bool:
-        for task in self.tasks:
-            if task.name == name:
-                return task.subtasks[task.current_step].tool_available
-        raise Exception("Task not found")
-
-    def get_stop_word(self, name: str) -> str:
-        for task in self.tasks:
-            if task.name == name:
-                if task.status == "active" or task.status == "processing":
-                    return task.subtasks[task.current_step].stop_word
-        raise Exception("Task not found")
-
-    def is_interactive(self, name: str) -> bool:
-        for task in self.tasks:
-            if task.name == name:
-                if task.status == "active" or task.status == "processing":
-                    return task.subtasks[task.current_step].interactive
         raise Exception("Task not found")
     
     def is_task_completed(self, name: str) -> bool:
