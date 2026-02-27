@@ -68,7 +68,7 @@ class LoopManager:
         self.tool_table = self._load_tools(self.config)
         self.tool_description = self._make_tool_description(self.config)
 
-    def inti_agent(self):
+    def init_agent(self):
         if self.state.state == "none":
             self.state.state = "task"
             self.state.identity = self.prompts["default_identity_prompt"]
@@ -96,6 +96,16 @@ class LoopManager:
 
     def _task_loop(self, input: str) -> str:
         def _check_and_clear(answer: str) -> bool:
+            # Post-step callback
+            subtask = self.task_manager.get_current_subtask(self.state.current_task) 
+            if not subtask.callback == "none":
+                if subtask.callback in self.callbacks:
+                    self.callbacks[subtask.callback](answer)
+                else:
+                    raise Exception(f"Callback {subtask.callback} not found.")
+            print("NEXT STEP")
+            self.task_manager.next_step(self.state.current_task)
+            # Task completion check    
             if self.task_manager.is_task_completed(self.state.current_task):
                 self.state.task_summary = ""
                 self.state.state = "ready"
@@ -103,8 +113,10 @@ class LoopManager:
                 self._save_state(self.config["context"]["state_path"])
                 return True
             return False
+        # Preparing input, to orevent instructions injection
         input = "Interpret this message in context of your current task: " + input
         try:
+            # Preparing instruction
             subtask = self.task_manager.get_current_subtask(self.state.current_task)
             if self.task_manager.get_task_status(self.state.current_task) == "active":
                 instruction = subtask.instruction
@@ -113,28 +125,22 @@ class LoopManager:
         except Exception as e:
             return str(e)
         if subtask.interactive:
+            # Interactive loop
             answer = self._request_loop(input, task=True, tool_available=subtask.tool_available)
             if subtask.stop_word in answer:
                 answer = answer.replace(subtask.stop_word, "")
-                print("NEXT STEP")
-                self.task_manager.next_step(self.state.current_task)
                 if _check_and_clear(answer):
                     return answer
                 self._summarise(task=True, memory=False)
                 return self._task_loop("")
             return answer
         else:
+            # Non-interactive loop
             for i in range(STEP_PER_TASK_LIMIT):
                 answer = self._request_loop(input, task=True, tool_available=subtask.tool_available)
                 if subtask.stop_word in answer:
                     answer = answer.replace(subtask.stop_word, "")
-                    if not subtask.callback == "none":
-                        if subtask.callback in self.callbacks:
-                            self.callbacks[subtask.callback](answer)
-                        else:
-                            raise Exception(f"Callback {subtask.callback} not found.")
-                    print("NEXT STEP")
-                    self.task_manager.next_step(self.state.current_task)
+                    
                     if _check_and_clear(answer):
                         return "Task completed."
                     else:

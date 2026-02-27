@@ -69,7 +69,7 @@ def main():
                     if message.message == "autonomous_loop":
                         loop_manager.autonomous_loop()
                     elif message.message == "init":
-                        answer = loop_manager.inti_agent()
+                        answer = loop_manager.init_agent()
                         bot_responce(answer, message.chat_id)
                 else:
                     print(f"Unknown message type: {message.type}")
