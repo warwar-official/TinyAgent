@@ -16,6 +16,11 @@
             "model_id": "gemma-3-27b-it",
             "provider": "gemini",
             "api_key_name": "GEMINI_API_KEY"
+        },
+        "summary_model": {
+            "model_id": "gemma-3-12b-it",
+            "provider": "gemini",
+            "api_key_name": "GEMINI_API_KEY"
         }
     },
     "context": {
@@ -26,14 +31,11 @@
         "state_path": "./data/state.json",
         "memory": {
             "active": true,
-            "db_path": "./data/memory/",
-            "emb_model": {
-                "model_id": "text-embedding-nomic-embed-text-v1.5",
-                "provider": "lmstudio",
-                "api_key_name": ""
-            },
+            "db_path": "./data/memory/db/",
+            "models_cache_path": "./data/memory/models/",
+            "emb_model_name": "intfloat/multilingual-e5-large",
             "merge_model": {
-                "model_id": "gemma-3-27b-it",
+                "model_id": "gemma-3-4b-it",
                 "provider": "gemini",
                 "api_key_name": "GEMINI_API_KEY"
             }
@@ -47,12 +49,12 @@
     "tools": [
         {
             "name": "current_weather",
-            "description": "Gets the current weather for a given location.",
+            "description": "Gets the current weather and forecast for a specific city. Use this when the user asks about weather conditions.",
             "parameters": {
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "The city name, e.g. Lviv"
+                        "description": "The specific city name, e.g., 'Kyiv', 'Lviv'."
                     }
                 },
                 "required": [
@@ -71,7 +73,10 @@
                     },
                     "count": {
                         "type": "integer",
-                        "description": "The number of results to return. Default: 3, Max: 5"
+                        "description": "The number of results to return.",
+                        "default": 3,
+                        "minimum": 1,
+                        "maximum": 5
                     }
                 },
                 "required": [
@@ -125,12 +130,12 @@
         },
         {
             "name": "file_list",
-            "description": "Lists the files in a directory.",
+            "description": "Lists all files and subdirectories in a specific directory within the workspace.",
             "parameters": {
                 "properties": {
                     "dir": {
                         "type": "string",
-                        "description": "The path to the directory."
+                        "description": "Relative path to the directory (e.g., './data/'). Use '.' for the root workspace directory."
                     }
                 },
                 "required": [

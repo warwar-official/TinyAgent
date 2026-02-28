@@ -10,7 +10,7 @@ import queue
 import time
 
 CONFIG_PATH = "config.json"
-USE_TELEGRAM_FRONTEND = False
+USE_TELEGRAM_FRONTEND = True
 AUTONOMOUS_LOOP_INTERVAL = 0
 
 def load_config(path: str) -> dict | None:

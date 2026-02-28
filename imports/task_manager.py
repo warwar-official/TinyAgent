@@ -36,8 +36,6 @@ class Task:
     name: str
     description: str
     status: str
-    create_time: str
-    update_time: str
     current_step: int
     subtasks: list[SubTask]
 
@@ -46,8 +44,6 @@ class Task:
             "name": self.name,
             "description": self.description,
             "status": self.status,
-            "create_time": self.create_time,
-            "update_time": self.update_time,
             "current_step": self.current_step,
             "subtasks": [subtask.to_json() for subtask in self.subtasks]
         }
@@ -58,8 +54,6 @@ class Task:
             name=json_data["name"],
             description=json_data["description"],
             status=json_data["status"],
-            create_time=json_data["create_time"],
-            update_time=json_data["update_time"],
             current_step=json_data["current_step"],
             subtasks=[SubTask.from_json(subtask) for subtask in json_data["subtasks"]]
         )
@@ -108,16 +102,13 @@ class TaskManager:
                     return
         raise Exception("Task not found")
     
-    def activate_task(self, name: str) -> None:
+    def restart_task(self, name: str) -> None:
         for task in self.tasks:
             if task.name == name:
-                if not task.status == "active" and not task.status == "processing":
-                    task.status = "active"
-                    task.current_step = 0
-                    self._save_tasks()
-                    return
-                else:
-                    return
+                task.status = "active"
+                task.current_step = 0
+                self._save_tasks()
+                return
         raise Exception("Task not found")
 
     def terminate_task(self, name: str) -> None:

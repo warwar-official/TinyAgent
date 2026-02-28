@@ -12,10 +12,13 @@ class HistoryRecord:
     create_time: datetime
     role: str
     message: str
-    def __init__(self, role: str, message: str, create_time: datetime = datetime.now(), hash: str = "") -> None:
-        self.create_time = create_time
+    def __init__(self, role: str, message: str, create_time: datetime | None = None, hash: str = "") -> None:
         self.role = role
         self.message = message
+        if create_time:
+            self.create_time = create_time
+        else:
+            self.create_time = datetime.now()
         if hash:
             self.hash = hash
         else:

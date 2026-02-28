@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from imports import task_manager
 from imports.history_manager import HistoryManager, HistoryRecord
 from imports.providers_manager import ProvidersManager, Model
-from imports.memory_manager import MemoryManager
+from imports.memory_rag import MemoryRAG
 from imports.task_manager import TaskManager
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import importlib
 import re
+import os
+
+DEBUG = os.getenv("DEBUG", False)
 
 @dataclass
 class LoopState:
@@ -41,7 +43,7 @@ class LoopState:
 
 STEP_PER_TASK_LIMIT = 15
 SUMMARIZE_LEN = 20
-MIN_SUMURIZE_LEN = 10
+MIN_SUMURIZE_LEN = SUMMARIZE_LEN / 2
 
 class LoopManager:
     def __init__(self, config: dict) -> None:
@@ -50,6 +52,7 @@ class LoopManager:
         # Base components
         self.providers_manager = ProvidersManager(self.config["providers"])
         self.model = Model(**self.config["agent"]["model"])
+        self.summary_model = Model(**self.config["agent"]["summary_model"])
         self.conversation_history = HistoryManager(self.config["context"]["conversation_history_path"])
         # Task components
         self.task_history = HistoryManager(self.config["context"]["task_history_path"])
@@ -57,7 +60,7 @@ class LoopManager:
         self._load_callbacks()
         # Memory manager
         if self.config["context"]["memory"]["active"]:
-            self.memory = MemoryManager(self.config)
+            self.memory = MemoryRAG(self.config)
         else:
             self.memory = None
         # Prompts and state 
@@ -73,7 +76,7 @@ class LoopManager:
             self.state.state = "task"
             self.state.identity = self.prompts["default_identity_prompt"]
             self.state.current_task = "identity_setup"
-            self.task_manager.activate_task("identity_setup")
+            self.task_manager.restart_task("identity_setup")
             return self._task_loop("")
         else:
             return "Agent already initialized."
@@ -91,7 +94,7 @@ class LoopManager:
     def autonomous_loop(self):
         self.state.state = "task"
         self.state.current_task = "own_task"
-        self.task_manager.activate_task("own_task")
+        self.task_manager.restart_task("own_task")
         return self._task_loop("")
 
     def _task_loop(self, input: str) -> str:
@@ -111,17 +114,20 @@ class LoopManager:
                 self.state.state = "ready"
                 self.state.current_task = "none"
                 self._save_state(self.config["context"]["state_path"])
+                self.task_history.set_old_records_mark()
                 return True
             return False
         # Preparing input, to orevent instructions injection
         input = "Interpret this message in context of your current task: " + input
         try:
             # Preparing instruction
-            subtask = self.task_manager.get_current_subtask(self.state.current_task)
             if self.task_manager.get_task_status(self.state.current_task) == "active":
+                subtask = self.task_manager.get_current_subtask(self.state.current_task)
                 instruction = subtask.instruction
-                instruction += f"\nWhen you done with this task, say \"{subtask.stop_word}\" to go to the next step. This phrase system valuable. so don't use it in another meaning except finishing step."
+                instruction += self.prompts["task_stopword_prompt"].format(instruction=subtask.instruction, stop_word=subtask.stop_word)
                 input = instruction
+            else:
+                subtask = self.task_manager.get_current_subtask(self.state.current_task)
         except Exception as e:
             return str(e)
         if subtask.interactive:
@@ -151,7 +157,7 @@ class LoopManager:
                         else:
                             raise Exception("Unexpected behavior betwen steps. Step without instruction.")
                 else:
-                    input = "Make your next step."
+                    input = "Continue."
             return "Loop exceed limit of steps per task. But task was not completed."
 
     def _request_loop(self, input: str, task: bool = False, tool_available: bool = True) -> str:
@@ -188,36 +194,41 @@ class LoopManager:
         return self._remove_thinking(answer.strip())
 
     def _summarise(self, task: bool = False, memory: bool = True) -> None:
+        # Creating summary
         if task:
             conversation_summary_prompt = self.prompts["task_summary_prompt"]
             prev_records = self.task_history.get_records()
             prev_records.insert(0, HistoryRecord("model", "Current task summary: " + self.state.task_summary))
+            source = "task"
         else:
             conversation_summary_prompt = self.prompts["conversation_summary_prompt"]
             prev_records = self.conversation_history.get_records()
             if len(prev_records) < MIN_SUMURIZE_LEN:
-                print("Not enough records to summarise.")
+                if DEBUG:
+                    print("Not enough records to summarise.")
                 return
             prev_records.insert(0, HistoryRecord("model", "Current conversation summary: " + self.state.conversation_summary))
+            source = "conversation"
         payload = prev_records + [HistoryRecord("user", conversation_summary_prompt)]
-        answer = self.providers_manager.generation_request(self.model, payload)
+        answer = self.providers_manager.generation_request(self.summary_model, payload)
         if task:
             self.state.task_summary = self._remove_thinking(answer)
         else:
             self.state.conversation_summary = self._remove_thinking(answer)
         self._save_state(self.config["context"]["state_path"])
-
+        # Creating memories
         if memory:
             if self.config["context"]["memory"]["active"]:
                 memory_symmary_prompt = self.prompts["memory_summary_prompt"]
-                payload = self.conversation_history.get_records() + [HistoryRecord("user", memory_symmary_prompt)]
-                raw_memory_summary = self.providers_manager.generation_request(self.model, payload)
+                payload = prev_records + [HistoryRecord("user", memory_symmary_prompt)]
+                raw_memory_summary = self.providers_manager.generation_request(self.summary_model, payload)
                 memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
                 memory_summary_list = json.loads(memory_summary)["important_facts"]
-                print("\n" + str(memory_summary_list) + "\n")
+                if DEBUG:
+                    print("\n" + str(memory_summary_list) + "\n")
                 for fact in memory_summary_list:
                     if self.memory:
-                        self.memory.add_memory(fact.strip())
+                        self.memory.add_memory(fact.strip(), source, "summary")
         if task:
             self.task_history.set_old_records_mark(5)
         else:
@@ -237,21 +248,6 @@ class LoopManager:
             tool_description = ""
         # Ability description 
         ability_description = self.prompts["ability_prompt"]
-        # Last message time 
-        last_user_message = self.conversation_history.get_last_record("user")
-        if last_user_message:
-            last_message_time = last_user_message.create_time
-            time_diff = datetime.now() - last_message_time
-            if time_diff < timedelta(minutes=1):
-                last_message_time_str = f"{time_diff.seconds // 60} minutes ago"
-            elif time_diff < timedelta(hours=1):
-                last_message_time_str = f"{time_diff.seconds // 3600} hours ago"
-            elif time_diff < timedelta(days=1):
-                last_message_time_str = f"{time_diff.days} days ago"
-            else:
-                last_message_time_str = f"{time_diff.days // 30} months ago"
-        else:
-            last_message_time_str = "No previous messages"
         # System prompt 
         system_prompt = (
             "[SYSTEM]\n\n"
@@ -263,12 +259,11 @@ class LoopManager:
             f"{tool_description}\n\n"
             "# RUNTIME STATE\n\n"
             f"Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"Last message from user: {last_message_time_str} ago\n"
             f"Retrived memories:\n{self.retrived_memory}\n"
             f"Notes from the autonomus loop:\n{self.state.autonomouse_notes}\n"
+            f"{self.prompts['securety_prompt']}\n"
             "[END_SYSTEM]\n"
         )
-
         if task:
             subtask = self.task_manager.get_current_subtask(self.state.current_task)
             task_instruct = (
@@ -283,20 +278,21 @@ class LoopManager:
         system_prompt += task_instruct
         system_record = [HistoryRecord("system", system_prompt)]
         # Conversation summary
+        summary = []
         if task:
             if self.state.task_summary != "":
-                system_record.append(HistoryRecord("model", self.state.task_summary))
+                summary = [HistoryRecord("model", self.state.task_summary)]
         else:
             if self.state.conversation_summary != "":
-                system_record.append(HistoryRecord("model", self.state.conversation_summary))
+                summary = [HistoryRecord("model", self.state.conversation_summary)]
         # History 
         if history:
             if task:
-                payload = system_record + self.task_history.get_records()
+                payload = summary + self.task_history.get_records() + system_record
             else:
-                payload = system_record + self.conversation_history.get_records()
+                payload = summary + self.conversation_history.get_records() + system_record
         else:
-            payload = system_record
+            payload = summary + system_record
         return payload
 
     def _load_prompts(self, path: str) -> dict:
@@ -372,7 +368,7 @@ class LoopManager:
                 result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
                 if result["tool_result"]:
                     if len(result["tool_result"]) > 2500:
-                        payload = [HistoryRecord("user", tool_summary_prompt.format(toolcall["name"], result["tool_result"]))]
+                        payload = [HistoryRecord("user", tool_summary_prompt.format(toolname=toolcall["name"], result=result["tool_result"]))]
                         result["tool_result"] = self.providers_manager.generation_request(self.model, payload)
                         result["summarized"] = True
             except Exception as e:
