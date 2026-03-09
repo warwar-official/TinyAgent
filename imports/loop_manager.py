@@ -3,9 +3,11 @@ from imports.history_manager import HistoryManager, HistoryRecord
 from imports.providers_manager import ProvidersManager, Model
 from imports.memory_rag import MemoryRAG
 from imports.task_manager import TaskManager
-from datetime import datetime
+from imports.mcp.connector import MCPConnector
+from imports.mcp.base_tools_mcp import BaseToolsMCP
+from imports.mcp.prompt_builder_mcp import PromptBuilderMCP
+from imports.mcp.retrieval_mcp import RetrievalMCP
 import json
-import importlib
 import re
 import os
 
@@ -42,7 +44,7 @@ class LoopState:
         )
 
 STEP_PER_TASK_LIMIT = 15
-SUMMARIZE_LEN = 20
+SUMMARIZE_LEN = 15
 MIN_SUMURIZE_LEN = SUMMARIZE_LEN / 2
 
 class LoopManager:
@@ -67,9 +69,14 @@ class LoopManager:
         self.retrived_memory = "None"
         self.prompts = self._load_prompts(self.config["context"]["prompts_path"])
         self.state = self._load_state(self.config["context"]["state_path"])
-        # Tools
-        self.tool_table = self._load_tools(self.config)
-        self.tool_description = self._make_tool_description(self.config)
+        # MCP servers and connector
+        mcp_servers = [
+            BaseToolsMCP(self.config),
+            PromptBuilderMCP(self.prompts),
+        ]
+        if self.config["context"]["memory"]["active"] and self.memory:
+            mcp_servers.append(RetrievalMCP(self.memory.client, self.memory.embedding_model))
+        self.mcp_connector = MCPConnector(mcp_servers)
 
     def init_agent(self):
         if self.state.state == "none":
@@ -163,9 +170,9 @@ class LoopManager:
     def _request_loop(self, input: str, task: bool = False, tool_available: bool = True) -> str:
         def _add_record(type: str, message: str) -> None:
             if task:
-                self.task_history.add_record(type,message)
+                self.task_history.add_record(type,self._remove_thinking(message))
             else:
-                self.conversation_history.add_record(type,message)
+                self.conversation_history.add_record(type,self._remove_thinking(message))
         self._retrive_memory(input)
         _add_record("user",input)
         if task:
@@ -176,7 +183,7 @@ class LoopManager:
         _add_record("model",answer)
         toolcall = self._parse_toolcall(answer)
         while toolcall:
-            tool_result = self._use_tool(toolcall)
+            tool_result = self._execute_tool(toolcall)
             _add_record("tool",self.prompts["tool_result_template"].format(name=toolcall["name"], result=tool_result))
             if task:
                 payload = self._make_payload(tool=tool_available, history=True, task=True)
@@ -243,30 +250,13 @@ class LoopManager:
     def _make_payload(self, tool: bool = True, history: bool = True, task: bool = False) -> list[HistoryRecord]:
         # Tool description
         if tool:
-            tool_description = self.tool_description
+            tool_description = self._format_tool_descriptions(self.mcp_connector.get_tools())
         else:
             tool_description = ""
-        # Ability description 
-        ability_description = self.prompts["ability_prompt"]
-        # System prompt 
-        system_prompt = (
-            "[SYSTEM]\n\n"
-            "# IDENTITY SECTION\n\n"
-            f"{self.state.identity}\n\n"
-            "# TECHNICAL SECTION\n\n"
-            f"{ability_description}\n\n"
-            f"{self.prompts['tools_prompt']}\n"
-            f"{tool_description}\n\n"
-            "# RUNTIME STATE\n\n"
-            f"Current date and time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"Retrived memories:\n{self.retrived_memory}\n"
-            f"Notes from the autonomus loop:\n{self.state.autonomouse_notes}\n"
-            f"{self.prompts['securety_prompt']}\n"
-            "[END_SYSTEM]\n"
-        )
+        # Task info block
         if task:
             subtask = self.task_manager.get_current_subtask(self.state.current_task)
-            task_instruct = (
+            task_info = (
                 "[TASK]\n"
                 f"You are performing task now. Follow the instructions.\n"
                 f"Task: \"{subtask.instruction}\"\n"
@@ -274,8 +264,15 @@ class LoopManager:
                 "[END_TASK]"
             )
         else:
-            task_instruct = ""
-        system_prompt += task_instruct
+            task_info = ""
+        # System prompt via MCP
+        system_prompt = self.mcp_connector.generate_prompt("system_prompt", {
+            "identity": self.state.identity,
+            "tool_description": tool_description,
+            "retrieved_memory": self.retrived_memory if self.retrived_memory else "None",
+            "autonomous_notes": self.state.autonomouse_notes,
+            "task_info": task_info,
+        })
         system_record = [HistoryRecord("system", system_prompt)]
         # Conversation summary
         summary = []
@@ -288,11 +285,11 @@ class LoopManager:
         # History 
         if history:
             if task:
-                payload = summary + self.task_history.get_records() + system_record
+                payload = system_record + summary + self.task_history.get_records()
             else:
-                payload = summary + self.conversation_history.get_records() + system_record
+                payload = system_record + summary + self.conversation_history.get_records()
         else:
-            payload = summary + system_record
+            payload = system_record + summary
         return payload
 
     def _load_prompts(self, path: str) -> dict:
@@ -360,39 +357,29 @@ class LoopManager:
                 return None
         return None
     
-    def _use_tool(self, toolcall: dict) -> str:
+    def _execute_tool(self, toolcall: dict) -> str:
+        """Execute a tool via MCP and optionally summarize long results."""
         tool_summary_prompt = self.prompts["tool_summary_prompt"]
-        result = ""
-        if toolcall["name"] in self.tool_table:
-            try:
-                result = self.tool_table[toolcall["name"]](**toolcall["arguments"])
-                if result["tool_result"]:
-                    if len(result["tool_result"]) > 2500:
-                        payload = [HistoryRecord("user", tool_summary_prompt.format(toolname=toolcall["name"], result=result["tool_result"]))]
-                        result["tool_result"] = self.providers_manager.generation_request(self.model, payload)
-                        result["summarized"] = True
-            except Exception as e:
-                result={"tool_name": toolcall["name"], "tool_arguments": toolcall["arguments"], "tool_result": None, "truncate": False, "error": str(e)}
-        else:
-            result={"tool_name": toolcall["name"], "tool_arguments": toolcall["arguments"], "tool_result": None, "truncate": False, "error": "Error: Tool not found"}
+        try:
+            result = self.mcp_connector.execute_tool(toolcall["name"], toolcall["arguments"])
+            if result.get("tool_result"):
+                tool_result_str = str(result["tool_result"])
+                if len(tool_result_str) > 5000:
+                    payload = [HistoryRecord("user", tool_summary_prompt.format(tool_name=toolcall["name"], result=tool_result_str))]
+                    result["tool_result"] = self.providers_manager.generation_request(self.summary_model, payload)
+                    result["summarized"] = True
+        except Exception as e:
+            result = {"tool_name": toolcall["name"], "tool_arguments": toolcall["arguments"],
+                      "tool_result": None, "truncate": False, "error": str(e)}
         print("tool:" + str(result))
         return str(result)
-    
-    def _load_tools(self, config: dict) -> dict:
-        tool_table = {}
-        try:
-            for tool in config["tools"]:
-                tool_name = tool["name"]
-                module = importlib.import_module(f"imports.tools.{tool_name}")
-                tool_table[tool_name] = getattr(module, tool_name)
-        except json.JSONDecodeError as e:
-            print(f"Unable to decode config! Error: {e}")
-        return tool_table
 
-    def _make_tool_description(self, config: dict) -> str:
+    @staticmethod
+    def _format_tool_descriptions(tools: list[dict]) -> str:
+        """Convert a list of tool schemas into the text format the model expects."""
         prompt = ""
-        for tool in config["tools"]:
-            prompt += f"\n{tool['name']}: {tool['description']}\nParameters: {tool['parameters']}\n"
+        for tool in tools:
+            prompt += f"\n{tool['name']}: {tool.get('description', '')}\nParameters: {tool.get('parameters', {})}\n"
         return prompt
     
     def _remove_thinking(self, message: str) -> str:
