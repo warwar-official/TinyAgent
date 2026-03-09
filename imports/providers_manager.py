@@ -6,6 +6,7 @@ import os
 import time
 from imports.history_manager import HistoryRecord
 from dataclasses import dataclass
+from typing import Callable
 
 
 @dataclass
@@ -13,45 +14,87 @@ class Model:
     provider: str
     model_id: str
     api_key_name: str | None
-    def __init__(self, provider: str, model_id: str, api_key_name: str | None):
+    vision_enabled: bool = False
+    def __init__(self, provider: str, model_id: str, api_key_name: str | None,
+                 vision_enabled: bool = False):
         self.provider = provider
         self.model_id = model_id
         self.api_key_name = api_key_name
+        self.vision_enabled = vision_enabled
 
 class ProvidersManager:
     def __init__(self, providers: list[dict]):
         self.providers_dict = {p["name"]: p for p in providers}
 
-    def _render_google_compatible_payload(self, payload: list[HistoryRecord]) -> dict:
+    def _render_google_compatible_payload(
+        self,
+        payload: list[HistoryRecord],
+        encode_images: bool = True,
+        image_resolver: Callable[[str], str | None] | None = None,
+    ) -> dict:
         contents = []
         for record in payload:
             role = "user" if record.role.lower() in ["user", "tool", "system"] else "model"
-            contents.append({
-                "role": role,
-                "parts": [{"text": record.message}]
-            })
+            parts: list[dict] = [{"text": record.message}]
+
+            if encode_images and image_resolver and record.image_hash:
+                b64 = image_resolver(record.image_hash)
+                if b64:
+                    parts.append({
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": b64,
+                        }
+                    })
+
+            contents.append({"role": role, "parts": parts})
         return {"contents": contents}
 
-    def _render_openai_compatible_payload(self, model_id: str, payload: list[HistoryRecord]) -> dict:
+    def _render_openai_compatible_payload(
+        self,
+        model_id: str,
+        payload: list[HistoryRecord],
+        encode_images: bool = True,
+        image_resolver: Callable[[str], str | None] | None = None,
+    ) -> dict:
         messages = []
         for record in payload:
             role = "user" if record.role.lower() in ["user", "human"] else "assistant"
             if record.role.lower() == "system":
                 role = "system"
-            messages.append({
-                "role": role,
-                "content": record.message
-            })
+
+            if encode_images and image_resolver and record.image_hash:
+                b64 = image_resolver(record.image_hash)
+                if b64:
+                    content = [
+                        {"type": "text", "text": record.message},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}"
+                        }},
+                    ]
+                else:
+                    content = record.message
+            else:
+                content = record.message
+
+            messages.append({"role": role, "content": content})
         return {
             "model": model_id,
             "messages": messages
         }
 
-    def _render_payload(self, structure: str, model_id: str, payload: list[HistoryRecord]) -> dict:
+    def _render_payload(
+        self,
+        structure: str,
+        model_id: str,
+        payload: list[HistoryRecord],
+        encode_images: bool = True,
+        image_resolver: Callable[[str], str | None] | None = None,
+    ) -> dict:
         if structure == "google-compatible":
-            return self._render_google_compatible_payload(payload)
+            return self._render_google_compatible_payload(payload, encode_images, image_resolver)
         elif structure == "openai-compatible":
-            return self._render_openai_compatible_payload(model_id, payload)
+            return self._render_openai_compatible_payload(model_id, payload, encode_images, image_resolver)
         else:
             raise ValueError(f"Unknown structure: {structure}")
 
@@ -76,18 +119,30 @@ class ProvidersManager:
                 elif e.code >= 500:
                     time.sleep(1)
                     continue
+                elif e.code == 400:
+                    error_body = e.read().decode('utf-8')
+                    raise RuntimeError(
+                        f"Request rejected (HTTP 400). The model may not support this input format. "
+                        f"Details: {error_body}"
+                    ) from e
                 else:
                     raise RuntimeError(f"Request failed with HTTP {e.code}: {e.read().decode('utf-8')}") from e
         raise RuntimeError(f"Request failed after {max_retries} retries.")
 
-    def generation_request(self, model: Model, payload: list[HistoryRecord]) -> str:
+    def generation_request(
+        self,
+        model: Model,
+        payload: list[HistoryRecord],
+        encode_images: bool = True,
+        image_resolver: Callable[[str], str | None] | None = None,
+    ) -> str:
         if model.provider not in self.providers_dict:
             raise ValueError(f"Provider '{model.provider}' not found.")
         
         with open("payloads_log.json", "a") as f:
             payload_list = []
             for record in payload:
-                payload_list.append({"role": record.role, "message": record.message})
+                payload_list.append({"role": record.role, "message": record.message, "image_hash": record.image_hash})
             json.dump(payload_list, f, indent=4, ensure_ascii=False)
             f.write(",\n")
             
@@ -95,7 +150,11 @@ class ProvidersManager:
         endpoint = provider_info["endpoint"]
         structure = provider_info["structure"]
         
-        rendered_payload = self._render_payload(structure, model.model_id, payload)
+        rendered_payload = self._render_payload(
+            structure, model.model_id, payload,
+            encode_images=encode_images,
+            image_resolver=image_resolver,
+        )
         
         headers = {'Content-Type': 'application/json'}
         api_key = self._get_api_key(model.api_key_name)

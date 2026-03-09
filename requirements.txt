@@ -1,7 +1,5 @@
 certifi==2026.1.4
 charset-normalizer==3.4.4
-dotenv==0.9.9
-faiss-cpu==1.13.2
 idna==3.11
 numpy==2.4.2
 packaging==26.0

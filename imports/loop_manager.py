@@ -3,6 +3,7 @@ from imports.history_manager import HistoryManager, HistoryRecord
 from imports.providers_manager import ProvidersManager, Model
 from imports.memory_rag import MemoryRAG
 from imports.task_manager import TaskManager
+from imports.image_manager import ImageManager
 from imports.mcp.connector import MCPConnector
 from imports.mcp.base_tools_mcp import BaseToolsMCP
 from imports.mcp.prompt_builder_mcp import PromptBuilderMCP
@@ -12,6 +13,13 @@ import re
 import os
 
 DEBUG = os.getenv("DEBUG", False)
+
+
+@dataclass
+class AgentMessage:
+    """Message passed from the frontend to LoopManager."""
+    text: str
+    image_hash: str | None = None
 
 @dataclass
 class LoopState:
@@ -48,7 +56,7 @@ SUMMARIZE_LEN = 15
 MIN_SUMURIZE_LEN = SUMMARIZE_LEN / 2
 
 class LoopManager:
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, image_manager: ImageManager) -> None:
         # Save config, we need it farther
         self.config = config
         # Base components
@@ -69,6 +77,8 @@ class LoopManager:
         self.retrived_memory = "None"
         self.prompts = self._load_prompts(self.config["context"]["prompts_path"])
         self.state = self._load_state(self.config["context"]["state_path"])
+        # Image manager (shared with main.py)
+        self.image_manager = image_manager
         # MCP servers and connector
         mcp_servers = [
             BaseToolsMCP(self.config),
@@ -88,12 +98,15 @@ class LoopManager:
         else:
             return "Agent already initialized."
 
-    def router(self, user_input: str) -> str:
+    def router(self, message: AgentMessage) -> str:
+        # Vision validation
+        if message.image_hash and not self.model.vision_enabled:
+            return "This model does not support image inputs."
         if self.state.state == "ready":
-            self._retrive_memory(user_input)
-            answer = self._request_loop(user_input)
+            self._retrive_memory(message.text)
+            answer = self._request_loop(message)
         elif self.state.state == "task":
-            answer =  self._task_loop(user_input)
+            answer = self._task_loop(message.text)
         else:
             answer = "Agent not initialized. Start commant '/init'."
         return answer
@@ -167,30 +180,41 @@ class LoopManager:
                     input = "Continue."
             return "Loop exceed limit of steps per task. But task was not completed."
 
-    def _request_loop(self, input: str, task: bool = False, tool_available: bool = True) -> str:
-        def _add_record(type: str, message: str) -> None:
+    def _request_loop(self, input: AgentMessage | str, task: bool = False, tool_available: bool = True) -> str:
+        # Normalize input
+        if isinstance(input, str):
+            input = AgentMessage(text=input)
+        def _add_record(type: str, message: str, image_hash: str | None = None) -> None:
             if task:
-                self.task_history.add_record(type,self._remove_thinking(message))
+                self.task_history.add_record(type, self._remove_thinking(message), image_hash=image_hash)
             else:
-                self.conversation_history.add_record(type,self._remove_thinking(message))
-        self._retrive_memory(input)
-        _add_record("user",input)
+                self.conversation_history.add_record(type, self._remove_thinking(message), image_hash=image_hash)
+        self._retrive_memory(input.text)
+        _add_record("user", input.text, image_hash=input.image_hash)
         if task:
             payload = self._make_payload(tool=tool_available, history=True, task=True)
         else:
             payload = self._make_payload()
-        answer = self.providers_manager.generation_request(self.model, payload)
-        _add_record("model",answer)
+        answer = self.providers_manager.generation_request(
+            self.model, payload,
+            encode_images=True,
+            image_resolver=self.image_manager.get_image_base64,
+        )
+        _add_record("model", answer)
         toolcall = self._parse_toolcall(answer)
         while toolcall:
             tool_result = self._execute_tool(toolcall)
-            _add_record("tool",self.prompts["tool_result_template"].format(name=toolcall["name"], result=tool_result))
+            _add_record("tool", self.prompts["tool_result_template"].format(name=toolcall["name"], result=tool_result))
             if task:
                 payload = self._make_payload(tool=tool_available, history=True, task=True)
             else:
                 payload = self._make_payload()
-            answer = self.providers_manager.generation_request(self.model, payload)
-            _add_record("model",answer)
+            answer = self.providers_manager.generation_request(
+                self.model, payload,
+                encode_images=True,
+                image_resolver=self.image_manager.get_image_base64,
+            )
+            _add_record("model", answer)
             toolcall = self._parse_toolcall(answer)
             if task:
                 if len(self.task_history.get_records()) > SUMMARIZE_LEN:
@@ -217,7 +241,7 @@ class LoopManager:
             prev_records.insert(0, HistoryRecord("model", "Current conversation summary: " + self.state.conversation_summary))
             source = "conversation"
         payload = prev_records + [HistoryRecord("user", conversation_summary_prompt)]
-        answer = self.providers_manager.generation_request(self.summary_model, payload)
+        answer = self.providers_manager.generation_request(self.summary_model, payload, encode_images=False)
         if task:
             self.state.task_summary = self._remove_thinking(answer)
         else:
@@ -228,7 +252,7 @@ class LoopManager:
             if self.config["context"]["memory"]["active"]:
                 memory_symmary_prompt = self.prompts["memory_summary_prompt"]
                 payload = prev_records + [HistoryRecord("user", memory_symmary_prompt)]
-                raw_memory_summary = self.providers_manager.generation_request(self.summary_model, payload)
+                raw_memory_summary = self.providers_manager.generation_request(self.summary_model, payload, encode_images=False)
                 memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
                 memory_summary_list = json.loads(memory_summary)["important_facts"]
                 if DEBUG:
@@ -366,7 +390,7 @@ class LoopManager:
                 tool_result_str = str(result["tool_result"])
                 if len(tool_result_str) > 5000:
                     payload = [HistoryRecord("user", tool_summary_prompt.format(tool_name=toolcall["name"], result=tool_result_str))]
-                    result["tool_result"] = self.providers_manager.generation_request(self.summary_model, payload)
+                    result["tool_result"] = self.providers_manager.generation_request(self.summary_model, payload, encode_images=False)
                     result["summarized"] = True
         except Exception as e:
             result = {"tool_name": toolcall["name"], "tool_arguments": toolcall["arguments"],

@@ -1,9 +1,11 @@
 .env
 **/__pycache__/*
 tests/*
+scripts/*
 data/mnt/*
 data/memory/*
 data/history/*
+data/images/*
 data/state.json
 data/telegram_secret.json
 payloads_log.json

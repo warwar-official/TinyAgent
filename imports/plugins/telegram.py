@@ -50,6 +50,23 @@ def bot_process(request_queue: queue.Queue, secret_path: str):
             else:
                 request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
 
+        @bot.message_handler(content_types=['photo'])
+        def handle_photo(message):
+            if secret_keeper.check_user(message.from_user.id):
+                # Reject multi-image uploads (media groups)
+                if message.media_group_id:
+                    bot.send_message(message.chat.id, "⚠️ Multiple images are not supported. Please send one image at a time.")
+                    return
+                # Get the highest resolution photo
+                file_id = message.photo[-1].file_id
+                file_info = bot.get_file(file_id)
+                image_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_info.file_path}"
+                caption = message.caption or ""
+                request_queue.put(TelegramBotMessage("message", caption, message.chat.id, image_url=image_url))
+                bot.send_chat_action(message.chat.id, "typing")
+            else:
+                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+
         @bot.message_handler(func=lambda message: True)
         def hendle_message(message):
             if secret_keeper.check_user(message.from_user.id):
@@ -57,6 +74,7 @@ def bot_process(request_queue: queue.Queue, secret_path: str):
                 bot.send_chat_action(message.chat.id, "typing")
             else:
                 request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+
         bot.infinity_polling(interval=0, timeout=20)
     else:
         request_queue.put(TelegramBotMessage("report", "Bot is not initialized"))
@@ -70,10 +88,13 @@ class TelegramBotMessage:
     type: str
     message: str
     chat_id: str
-    def __init__(self, type: str, message: str, chat_id: str = ""):
+    image_url: str | None
+    def __init__(self, type: str, message: str, chat_id: str = "",
+                 image_url: str | None = None):
         self.type = type
         self.message = message
         self.chat_id = chat_id
+        self.image_url = image_url
 
 class SecretKeeper:
     def __init__(self, path: str):

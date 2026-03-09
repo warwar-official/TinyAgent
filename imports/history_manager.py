@@ -12,9 +12,12 @@ class HistoryRecord:
     create_time: datetime
     role: str
     message: str
-    def __init__(self, role: str, message: str, create_time: datetime | None = None, hash: str = "") -> None:
+    image_hash: str | None
+    def __init__(self, role: str, message: str, create_time: datetime | None = None,
+                 hash: str = "", image_hash: str | None = None) -> None:
         self.role = role
         self.message = message
+        self.image_hash = image_hash
         if create_time:
             self.create_time = create_time
         else:
@@ -29,7 +32,8 @@ class HistoryRecord:
             "hash": self.hash,
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
             "role": self.role,
-            "message": self.message
+            "message": self.message,
+            "image_hash": self.image_hash
         }
 
 class HistoryManager:
@@ -43,8 +47,8 @@ class HistoryManager:
             self.file_path = None
             print("Save path was not provided. Loaded in anonimous mode. No history will be saved.")
 
-    def add_record(self, role: str, message: str) -> None:
-        new_record = HistoryRecord(role, message.strip())
+    def add_record(self, role: str, message: str, image_hash: str | None = None) -> None:
+        new_record = HistoryRecord(role, message.strip(), image_hash=image_hash)
         if DEBUG:
             print(f"Adding record: {new_record}")
         self.history.append(new_record)
@@ -100,7 +104,8 @@ class HistoryManager:
                             record["role"],
                             record["message"],
                             datetime.strptime(record["create_time"], "%Y-%m-%d %H:%M:%S"),
-                            record["hash"]
+                            record["hash"],
+                            record.get("image_hash")
                         ))
             except IOError as e:
                 print("History file not found. Start anew.")

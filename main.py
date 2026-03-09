@@ -1,7 +1,8 @@
 import dotenv
 dotenv.load_dotenv()
 
-from imports.loop_manager import LoopManager
+from imports.loop_manager import LoopManager, AgentMessage
+from imports.image_manager import ImageManager
 from prompt_toolkit import PromptSession
 from imports.plugins.telegram import bot_responce, bot_process, stop_bot, TelegramBotMessage
 from threading import Thread
@@ -40,6 +41,7 @@ def autonomous_loop(request_queue: queue.Queue):
 def main():
     config = load_config(CONFIG_PATH)
     request_queue = queue.Queue()
+    image_manager = ImageManager()
 
     if config:
         if USE_TELEGRAM_FRONTEND:
@@ -52,13 +54,25 @@ def main():
         autonomous_thread = Thread(target=autonomous_loop, args=(request_queue,), daemon=True)
         autonomous_thread.start()
 
-        loop_manager = LoopManager(config)
+        loop_manager = LoopManager(config, image_manager)
         
         while True:
             try:
                 message = request_queue.get()
                 if message.type == "message":
-                    answer = loop_manager.router(message.message)
+                    # Process image if present
+                    image_hash = None
+                    if hasattr(message, 'image_url') and message.image_url:
+                        try:
+                            image_hash = image_manager.save_image_from_url(message.image_url)
+                        except Exception as e:
+                            print(f"Failed to download image: {e}")
+                    
+                    agent_message = AgentMessage(
+                        text=message.message or "",
+                        image_hash=image_hash,
+                    )
+                    answer = loop_manager.router(agent_message)
                     if message.chat_id == "console":
                         print(f"model: {answer}")
                     else:
