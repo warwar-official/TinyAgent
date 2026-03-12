@@ -55,7 +55,7 @@ def web_fetch(url: str) -> dict:
     """
 
     tool_answer = {
-        "tool_name": "fetch_web",
+        "tool_name": "web_fetch",
         "tool_arguments": {
             "url": url
         },

@@ -6,6 +6,19 @@ dotenv.load_dotenv()
 
 def web_search(query: str, count: int = 3) -> dict:
 
+    TOKEN = os.getenv("BRAVE_API_KEY")
+    if not TOKEN:
+        return {
+            "tool_name": "web_search",
+            "tool_arguments": {
+                "query": query,
+                "count": count
+            },
+            "tool_result": None,
+            "truncate": False,
+            "error": "BRAVE_API_KEY not found in environment variables"
+        }
+
     tool_answer = {
         "tool_name": "web_search",
         "tool_arguments": {
@@ -21,13 +34,13 @@ def web_search(query: str, count: int = 3) -> dict:
         count = 5
     headers = {
         "Accept": "application/json",
-        "X-Subscription-Token": os.getenv("BRAVE_API_KEY")
+        "X-Subscription-Token": TOKEN
     }
 
     response = request("GET", f"https://api.search.brave.com/res/v1/web/search?q={query}&country=US&search_lang=en&count={count}", headers=headers)
     while response.status_code != 200:
         if response.status_code == 422:
-            time.sleep(60)
+            time.sleep(30)
         else:
             tool_answer["error"] = f"Error while searching the web. Status code: {response.status_code}"
             return tool_answer

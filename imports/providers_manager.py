@@ -128,7 +128,7 @@ class ProvidersManager:
                     time.sleep(60)
                     continue
                 elif e.code >= 500:
-                    time.sleep(1)
+                    time.sleep(5)
                     continue
                 elif e.code == 400:
                     error_body = e.read().decode('utf-8')
