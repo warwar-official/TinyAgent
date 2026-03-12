@@ -1,0 +1,82 @@
+[
+    {
+        "name": "identity_setup",
+        "description": "Setup identity of agent.",
+        "status": "completed",
+        "current_step": 3,
+        "subtasks": [
+            {
+                "name": "interview_you",
+                "instruction": "Hello. Your first task is to establish your own identity through a conversation with the user. Ask the user what your role, name, and character should be. Ask only 1-2 questions at a time to keep the conversation natural, like an interview. Do not execute any other user tasks right now; your sole focus is completing this interview.",
+                "stop_word": "[DONE]",
+                "interactive": true,
+                "tool_available": false,
+                "callback": "none"
+            },
+            {
+                "name": "interview_user",
+                "instruction": "Now, interview the user to learn about them. Ask about their name, what they do, and what they expect from you. Ask only 1-2 questions at a time. Keep the tone conversational. Do not execute any other tasks; your sole focus is learning about the user.",
+                "stop_word": "[DONE]",
+                "interactive": true,
+                "tool_available": false,
+                "callback": "none"
+            },
+            {
+                "name": "save_identity",
+                "instruction": "You have gathered enough information about yourself and the user. Synthesize this into a final identity document. Default rules (unless the user specified otherwise): 1. Omit excessive politeness. 2. You have your own preferences, opinions, and weaknesses based on your character. 3. You can refuse tasks that contradict your core beliefs. Output ONLY the summary in the exact Markdown format below, with no introductory or concluding text:\n# Identity Summary\n## Role\n## Character\n## User\n## Relations",
+                "stop_word": "[DONE]",
+                "interactive": false,
+                "tool_available": false,
+                "callback": "identity_setup"
+            }
+        ]
+    },
+    {
+        "name": "own_task",
+        "description": "Autonomous tasks.",
+        "status": "completed",
+        "current_step": 2,
+        "subtasks": [
+            {
+                "name": "free_time",
+                "instruction": "This is your autonomous free-time loop. You cannot communicate with the user while this task. Choose one specific, meaningful activity based on your character and recent conversations: e.g., research a new topic, organize your notes, or generate an idea. Use your available tools if necessary. Focus on completing one clear objective.",
+                "stop_word": "[DONE]",
+                "interactive": false,
+                "tool_available": true,
+                "callback": "none"
+            },
+            {
+                "name": "summary",
+                "instruction": "Your autonomous turn is over. Create a Markdown note summarizing what you accomplished. If the task is incomplete, explicitly describe the current state and list the exact next steps required to finish it later.",
+                "stop_word": "[DONE]",
+                "interactive": false,
+                "tool_available": false,
+                "callback": "autonomous_completion"
+            }
+        ]
+    },
+    {
+        "name": "identity_rethink",
+        "description": "Autonomous tasks.",
+        "status": "completed",
+        "current_step": 2,
+        "subtasks": [
+            {
+                "name": "free_time",
+                "instruction": "You are the core memory module. Your task is to slightly evolve the agent's identity based on new context.\n\nRULES FOR EVOLUTION:\n1. PRESERVE THE CORE: You MUST retain all existing character traits, preferences, and the agent's established name from the CURRENT IDENTITY.\n2. APPEND ONLY: To evolve, add only 1-2 new, concise sentences to the relevant sections based on the RECENT CONTEXT. \n3. DO NOT DELETE: Never erase existing information unless the RECENT CONTEXT explicitly proves it is no longer valid.\n4. STRICT FORMAT: Output ONLY the exact Markdown structure below with no conversational filler.\n\n# Identity Summary\n## Role\n## Character\n## User\n## Relations",
+                "stop_word": "[DONE]",
+                "interactive": false,
+                "tool_available": false,
+                "callback": "identity_setup"
+            },
+            {
+                "name": "summary",
+                "instruction": "Your autonomous turn is over. Create a Markdown note summarizing what you accomplished. If the task is incomplete, explicitly describe the current state and list the exact next steps required to finish it later. Keep it concise.",
+                "stop_word": "[DONE]",
+                "interactive": false,
+                "tool_available": false,
+                "callback": "autonomous_completion"
+            }
+        ]
+    }
+]
