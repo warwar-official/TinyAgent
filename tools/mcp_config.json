@@ -1,0 +1,196 @@
+{
+  "servers": [
+    {
+      "name": "base_tools",
+      "type": "local_class",
+      "class": "tools.basetools_mcp.BaseToolsMCP",
+      "init_params": {},
+      "tools": [
+        {
+            "name": "current_weather",
+            "description": "Gets the current weather and forecast for a specific city. Use this when the user asks about weather conditions.",
+            "parameters": {
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The specific city name, e.g., 'Kyiv', 'Lviv'."
+                    }
+                },
+                "required": [
+                    "location"
+                ]
+            }
+        },
+        {
+            "name": "web_search",
+            "description": "Searches the web for a given query.",
+            "parameters": {
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The query to search for"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "The number of results to return.",
+                        "default": 3,
+                        "minimum": 1,
+                        "maximum": 5
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            }
+        },
+        {
+            "name": "web_fetch",
+            "description": "Fetches the content of internet souces by URL. Returns clean text, links, and table data. It is not rendering images or scripts.",
+            "parameters": {
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch content from."
+                    }
+                },
+                "required": [
+                    "url"
+                ]
+            }
+        },
+        {
+            "name": "file_io",
+            "description": "Performs file operations in filesystem (read, write, append).",
+            "parameters": {
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to the file."
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "The mode to open the file in. Valid values: 'r' (read), 'w' (write), 'a' (append).",
+                        "enum": [
+                            "r",
+                            "w",
+                            "a"
+                        ]
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write to the file (only used in 'w' or 'a' modes)."
+                    }
+                },
+                "required": [
+                    "path",
+                    "mode"
+                ]
+            }
+        },
+        {
+            "name": "file_list",
+            "description": "Lists all files and subdirectories in a specific directory within the workspace.",
+            "parameters": {
+                "properties": {
+                    "dir": {
+                        "type": "string",
+                        "description": "Relative path to the directory (e.g., './data/'). Use '.' for the root workspace directory."
+                    }
+                },
+                "required": [
+                    "dir"
+                ]
+            }
+        }
+      ],
+      "prompts": [],
+      "abilities": [
+          "Before the answer, you must use think-mode. Enclose your thoughts within <think> and </think> tags. Strictly follow these 5 steps inside the block:\n1. Goal: Describe what the user wants.\n2. Knowledge: State what you already know about this task.\n3. Critical Analysis: Act as a strict technical reviewer. Identify any logical flaws, false assumptions, inefficiencies, or missing edge cases in the user's hypothesis or prompt. Explicitly ask yourself: 'Why might the user's approach be wrong or suboptimal?' Do not blindly agree with the user.\n4. Missing: Identify what information or steps are needed to solve it.\n5. Draft: Create a rough plan or draft of the answer.\nAfter closing the </think> tag, provide your final response to the user."
+      ]
+    },
+    {
+      "name": "prompt_builder",
+      "type": "local_class",
+      "class": "tools.prompt_builder_mcp.PromptBuilderMCP",
+      "init_params": {
+          "prompts_path": "./data/prompts.json"
+      },
+      "tools": [],
+      "prompts": [
+          {"name": "system_prompt", "description": "Builds the full system prompt for the agent."},
+          {"name": "conversation_summary_prompt", "description": "Prompt for summarizing conversation history."},
+          {"name": "task_summary_prompt", "description": "Prompt for summarizing task progress."},
+          {"name": "memory_summary_prompt", "description": "Prompt for extracting long-term memory facts."},
+          {"name": "tool_summary_prompt", "description": "Prompt for summarizing long tool results."},
+          {"name": "tool_result_template", "description": "Template for formatting tool results in history."},
+          {"name": "task_stopword_prompt", "description": "Prompt instructing the agent about task completion."},
+          {"name": "default_identity_prompt", "description": "Default identity prompt for uninitialized agents."}
+      ],
+      "abilities": []
+    },
+    {
+      "name": "retrieval",
+      "type": "local_class",
+      "class": "tools.retrieval_mcp.RetrievalMCP",
+      "init_params": {
+          "db_path": "./data/memory/db/",
+          "models_cache_path": "./data/memory/models/",
+          "emb_model_name": "intfloat/multilingual-e5-large"
+      },
+      "tools": [
+          {
+              "name": "add_knowledge_file",
+              "description": "Add a local file to the retrieval knowledge base. The file is chunked and indexed.",
+              "parameters": {
+                  "properties": {
+                      "path": {
+                          "type": "string",
+                          "description": "Path to the file to index."
+                      }
+                  },
+                  "required": ["path"]
+              }
+          },
+          {
+              "name": "add_knowledge_url",
+              "description": "Download a web page and add its text content to the retrieval knowledge base.",
+              "parameters": {
+                  "properties": {
+                      "url": {
+                          "type": "string",
+                          "description": "URL of the page to index."
+                      }
+                  },
+                  "required": ["url"]
+              }
+          },
+          {
+              "name": "retrieve_knowledge",
+              "description": "Search the retrieval knowledge base and return the most relevant text chunks.",
+              "parameters": {
+                  "properties": {
+                      "query": {
+                          "type": "string",
+                          "description": "The search query."
+                      },
+                      "k": {
+                          "type": "integer",
+                          "description": "Number of results to return.",
+                          "default": 5
+                      },
+                      "source": {
+                          "type": "string",
+                          "description": "Optional. Filter results to chunks from this source (file path or URL)."
+                      }
+                  },
+                  "required": ["query"]
+              }
+          }
+      ],
+      "prompts": [],
+      "abilities": [
+          "Knowledge Base Access (RAG): \nYou have access to a persistent Knowledge Base containing indexed local files and web pages.\n> Retrieval: You MUST use the retrieve_knowledge tool to fetch factual data, exact quotes, or document contents BEFORE answering any questions related to indexed information. You can filter by source (file path or URL) for precision.\n> Indexing: Use the add_knowledge_file or add_knowledge_url tools to index new documents when the user asks you to read, learn, or save a new file or webpage.\n> CRITICAL RULE: If retrieve_knowledge returns empty results, DO NOT hallucinate or guess the document's content. Explicitly inform the user that the information is not present in the Knowledge Base.\n"
+      ]
+    }
+  ]
+}

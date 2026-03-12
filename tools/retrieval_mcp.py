@@ -1,36 +1,45 @@
 from typing import Any
 import os
 import uuid
+import requests
 
 from qdrant_client import QdrantClient, models
 from fastembed import TextEmbedding
 
 from imports.mcp.base import MCPServer
-
-# Reuse the HTML parser from the existing web_fetch tool
 from imports.tools.web_fetch import PageContentParser
-import requests
 
 COLLECTION_NAME = "retrieval_docs"
-DEFAULT_CHUNK_SIZE = 500  # approximate characters per chunk
-
+DEFAULT_CHUNK_SIZE = 500
 
 class RetrievalMCP(MCPServer):
-    """MCP server for document retrieval (RAG over files and URLs).
+    """MCP server for document retrieval (RAG over files and URLs)."""
 
-    Shares the **same** ``QdrantClient`` and ``TextEmbedding`` instances
-    with ``MemoryRAG`` (passed in at construction) but stores data in a
-    separate collection (``retrieval_docs``).
-    """
-
-    def __init__(self, client: QdrantClient, embedding_model: TextEmbedding) -> None:
-        self._client = client
-        self._embedding_model = embedding_model
+    def __init__(
+        self,
+        db_path: str = "",
+        models_cache_path: str = "",
+        emb_model_name: str = "",
+        client: QdrantClient | None = None,
+        embedding_model: TextEmbedding | None = None
+    ) -> None:
+        if client and embedding_model:
+            self._client = client
+            self._embedding_model = embedding_model
+        else:
+            if not db_path or not models_cache_path or not emb_model_name:
+                raise ValueError("RetrievalMCP requires either (client, embedding_model) or (db_path, models_cache_path, emb_model_name)")
+            
+            os.makedirs(db_path, exist_ok=True)
+            os.makedirs(models_cache_path, exist_ok=True)
+            
+            self._embedding_model = TextEmbedding(
+                model_name=emb_model_name,
+                cache_dir=models_cache_path
+            )
+            self._client = QdrantClient(path=db_path)
+            
         self._ensure_collection()
-
-    # ------------------------------------------------------------------
-    # Collection setup
-    # ------------------------------------------------------------------
 
     def _ensure_collection(self) -> None:
         collections = [c.name for c in self._client.get_collections().collections]
@@ -44,82 +53,6 @@ class RetrievalMCP(MCPServer):
                     distance=models.Distance.COSINE,
                 ),
             )
-
-    # ------------------------------------------------------------------
-    # RPC handlers
-    # ------------------------------------------------------------------
-
-    def _rpc_ability_prompt(self, params: dict) -> str:
-        """Describe the knowledge base capabilities to the agent."""
-        return (
-            "Knowledge Base Access (RAG): \n"
-            "You have access to a persistent Knowledge Base containing indexed local files and web pages.\n"
-            "> Retrieval: You MUST use the retrieve_knowledge tool to fetch factual data, exact quotes, or document contents BEFORE answering any questions related to indexed information. You can filter by source (file path or URL) for precision.\n"
-            "> Indexing: Use the add_knowledge_file or add_knowledge_url tools to index new documents when the user asks you to read, learn, or save a new file or webpage.\n"
-            "> CRITICAL RULE: If retrieve_knowledge returns empty results, DO NOT hallucinate or guess the document's content. Explicitly inform the user that the information is not present in the Knowledge Base.\n"
-        )
-        
-        """return (
-            "You have access to a Knowledge Base that may contain indexed documents "
-            "(local files and web pages). Use the 'retrieve_knowledge' tool when you "
-            "need factual information, data from documents, or answers that may have "
-            "been previously indexed. You can also add new documents using "
-            "'add_knowledge_file' or 'add_knowledge_url' tools. "
-            "When retrieving, you can optionally filter by source (file path or URL) "
-            "to narrow results to a specific document."
-        )"""
-
-    def _rpc_tool_list(self, params: dict) -> list[dict]:
-        return [
-            {
-                "name": "add_knowledge_file",
-                "description": "Add a local file to the retrieval knowledge base. The file is chunked and indexed.",
-                "parameters": {
-                    "properties": {
-                        "path": {
-                            "type": "string",
-                            "description": "Path to the file to index.",
-                        }
-                    },
-                    "required": ["path"],
-                },
-            },
-            {
-                "name": "add_knowledge_url",
-                "description": "Download a web page and add its text content to the retrieval knowledge base.",
-                "parameters": {
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "URL of the page to index.",
-                        }
-                    },
-                    "required": ["url"],
-                },
-            },
-            {
-                "name": "retrieve_knowledge",
-                "description": "Search the retrieval knowledge base and return the most relevant text chunks.",
-                "parameters": {
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query.",
-                        },
-                        "k": {
-                            "type": "integer",
-                            "description": "Number of results to return.",
-                            "default": 5,
-                        },
-                        "source": {
-                            "type": "string",
-                            "description": "Optional. Filter results to chunks from this source (file path or URL).",
-                        },
-                    },
-                    "required": ["query"],
-                },
-            },
-        ]
 
     def _rpc_tool_execute(self, params: dict) -> dict:
         name: str = params["name"]
@@ -150,10 +83,6 @@ class RetrievalMCP(MCPServer):
                 "truncate": False,
                 "error": str(e),
             }
-
-    # ------------------------------------------------------------------
-    # Tool implementations
-    # ------------------------------------------------------------------
 
     def _add_knowledge_file(self, path: str) -> dict:
         result = {"tool_name": "add_knowledge_file", "tool_arguments": {"path": path},
@@ -203,8 +132,6 @@ class RetrievalMCP(MCPServer):
                   "tool_result": None, "truncate": False, "error": None}
 
         query_vector = list(self._embedding_model.embed([query]))[0].tolist()
-
-        # Optional source filter
         query_filter = None
         if source:
             query_filter = models.Filter(
@@ -232,17 +159,8 @@ class RetrievalMCP(MCPServer):
         result["tool_result"] = results
         return result
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _chunk_text(text: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> list[str]:
-        """Split *text* into chunks of approximately *chunk_size* chars.
-
-        Tries to break on paragraph boundaries first (double newline),
-        then on single newlines, falling back to hard splits.
-        """
         paragraphs = text.split("\n\n")
         chunks: list[str] = []
         current = ""
@@ -257,7 +175,6 @@ class RetrievalMCP(MCPServer):
             else:
                 if current:
                     chunks.append(current)
-                # If a single paragraph is larger than chunk_size, split further
                 if len(para) > chunk_size:
                     lines = para.split("\n")
                     current = ""
@@ -270,7 +187,6 @@ class RetrievalMCP(MCPServer):
                         else:
                             if current:
                                 chunks.append(current)
-                            # Hard split for very long lines
                             while len(line) > chunk_size:
                                 chunks.append(line[:chunk_size])
                                 line = line[chunk_size:]
@@ -284,7 +200,6 @@ class RetrievalMCP(MCPServer):
         return chunks
 
     def _index_chunks(self, chunks: list[str], source: str = "") -> None:
-        """Embed and store *chunks* in the Qdrant collection."""
         if not chunks:
             return
 

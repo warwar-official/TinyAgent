@@ -5,9 +5,6 @@ from imports.memory_rag import MemoryRAG
 from imports.task_manager import TaskManager
 from imports.image_manager import ImageManager
 from imports.mcp.connector import MCPConnector
-from imports.mcp.base_tools_mcp import BaseToolsMCP
-from imports.mcp.prompt_builder_mcp import PromptBuilderMCP
-from imports.mcp.retrieval_mcp import RetrievalMCP
 import json
 import re
 import os
@@ -58,8 +55,9 @@ SUMMARIZE_LEN = 15
 MIN_SUMURIZE_LEN = SUMMARIZE_LEN / 2
 
 class LoopManager:
+    """Core manager for user and autonomous instruction execution."""
+    
     def __init__(self, config: dict, image_manager: ImageManager) -> None:
-        # Save config, we need it farther
         self.config = config
         # Base components
         self.providers_manager = ProvidersManager(self.config["providers"])
@@ -81,17 +79,35 @@ class LoopManager:
             self.memory = None
         # Prompts and state 
         self.retrived_memory = "None"
-        prompts = self._load_prompts(self.config["context"]["prompts_path"])
+        # Prompts and state 
+        self.retrived_memory = "None"
+        
         # Image manager (shared with main.py)
         self.image_manager = image_manager
-        # MCP servers and connector (must be before _load_state since _init_state uses it)
-        mcp_servers = [
-            BaseToolsMCP(self.config, prompts),
-            PromptBuilderMCP(prompts),
-        ]
+        
+        # MCP connector using dynamic configuration
+        mcp_config_path = self.config["context"].get("mcp_config_path", "./tools/mcp_config.json")
+        try:
+            with open(mcp_config_path, "r", encoding="utf-8") as f:
+                mcp_config_data = json.load(f)
+        except Exception as e:
+            print(f"Failed to load MCP config {mcp_config_path}: {e}")
+            mcp_config_data = {}
+            
+
+        # Optional: Inject shared QdrantClient if MemoryRAG is active to avoid db locking
         if self.config["context"]["memory"]["active"] and self.memory:
-            mcp_servers.append(RetrievalMCP(self.memory.client, self.memory.embedding_model))
-        self.mcp_connector = MCPConnector(mcp_servers)
+            for server_cfg in mcp_config_data.get("servers", []):
+                if server_cfg.get("name") == "retrieval":
+                    # We pass the already instantiated client and model instead of paths
+                    # This requires modifying tools/retrieval_mcp.py to accept them
+                    server_cfg["init_params"] = {
+                        "client": self.memory.client,
+                        "embedding_model": self.memory.embedding_model
+                    }
+
+        self.mcp_connector = MCPConnector(config_data=mcp_config_data) # type: ignore
+        
         # Load state (after connector, since _init_state fallback uses it)
         self.state = self._load_state(self.config["context"]["state_path"])
 
@@ -124,7 +140,8 @@ class LoopManager:
         self.task_manager.restart_task("own_task")
         return self._task_loop("")
     
-    def identity_rethink(self):
+    def identity_rethink(self) -> str:
+        """Trigger an identity rethinking process pulling recent history."""
         self.state.state = "task"
         self.state.current_task = "identity_rethink"
         self.task_manager.restart_task("identity_rethink")

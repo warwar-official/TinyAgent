@@ -42,109 +42,12 @@
                 "api_key_name": "GEMINI_API_KEY",
                 "vision_enabled": false
             }
-        }
+        },
+        "mcp_config_path": "./tools/mcp_config.json"
     },
     "plugins": {
         "telegram": {
             "secret_path": "./data/telegram_secret.json"
         }
-    },
-    "tools": [
-        {
-            "name": "current_weather",
-            "description": "Gets the current weather and forecast for a specific city. Use this when the user asks about weather conditions.",
-            "parameters": {
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The specific city name, e.g., 'Kyiv', 'Lviv'."
-                    }
-                },
-                "required": [
-                    "location"
-                ]
-            }
-        },
-        {
-            "name": "web_search",
-            "description": "Searches the web for a given query.",
-            "parameters": {
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The query to search for"
-                    },
-                    "count": {
-                        "type": "integer",
-                        "description": "The number of results to return.",
-                        "default": 3,
-                        "minimum": 1,
-                        "maximum": 5
-                    }
-                },
-                "required": [
-                    "query"
-                ]
-            }
-        },
-        {
-            "name": "web_fetch",
-            "description": "Fetches the content of internet souces by URL. Returns clean text, links, and table data. It is not rendering images or scripts.",
-            "parameters": {
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL to fetch content from."
-                    }
-                },
-                "required": [
-                    "url"
-                ]
-            }
-        },
-        {
-            "name": "file_io",
-            "description": "Performs file operations in filesystem (read, write, append).",
-            "parameters": {
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "The path to the file."
-                    },
-                    "mode": {
-                        "type": "string",
-                        "description": "The mode to open the file in. Valid values: 'r' (read), 'w' (write), 'a' (append).",
-                        "enum": [
-                            "r",
-                            "w",
-                            "a"
-                        ]
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "The content to write to the file (only used in 'w' or 'a' modes)."
-                    }
-                },
-                "required": [
-                    "path",
-                    "mode"
-                ]
-            }
-        },
-        {
-            "name": "file_list",
-            "description": "Lists all files and subdirectories in a specific directory within the workspace.",
-            "parameters": {
-                "properties": {
-                    "dir": {
-                        "type": "string",
-                        "description": "Relative path to the directory (e.g., './data/'). Use '.' for the root workspace directory."
-                    }
-                },
-                "required": [
-                    "dir"
-                ]
-            }
-        }
-    ]
+    }
 }
