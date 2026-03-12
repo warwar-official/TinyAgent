@@ -118,14 +118,14 @@ class ProvidersManager:
         return None
 
     def _execute_request_with_retries(self, req: urllib.request.Request) -> dict:
-        max_retries = 3
+        max_retries = 5
         for _ in range(max_retries):
             try:
                 with urllib.request.urlopen(req) as response:
                     return json.loads(response.read().decode('utf-8'))
             except urllib.error.HTTPError as e:
                 if e.code == 429:
-                    time.sleep(60)
+                    time.sleep(30)
                     continue
                 elif e.code >= 500:
                     time.sleep(5)
