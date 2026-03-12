@@ -10,6 +10,7 @@ import re
 import os
 import threading
 import queue
+from typing import Callable
 
 DEBUG = os.getenv("DEBUG", False)
 
@@ -111,36 +112,42 @@ class LoopManager:
         # Load state (after connector, since _init_state fallback uses it)
         self.state = self._load_state(self.config["context"]["state_path"])
 
-    def init_agent(self):
+    def init_agent(self, send_status: Callable[[str], None] | None = None) -> str:
         if self.state.state == "none":
             self.state.state = "task"
             self.state.identity = self.mcp_connector.generate_prompt("default_identity_prompt", {})
             self.state.current_task = "identity_setup"
             self.task_manager.restart_task("identity_setup")
-            return self._task_loop("")
+            if send_status:
+                send_status("Initializing agent...")
+            return self._task_loop("", send_status=send_status)
         else:
             return "Agent already initialized."
 
-    def router(self, message: AgentMessage) -> str:
+    def router(self, message: AgentMessage, send_status: Callable[[str], None] | None = None) -> str:
         # Vision validation
         if message.image_hash and not self.model.vision_enabled:
             return "This model does not support image inputs."
         if self.state.state == "ready":
+            if send_status:
+                send_status("Retrieving memories...")
             self._retrive_memory(message.text)
-            answer = self._request_loop(message)
+            answer = self._request_loop(message, send_status=send_status)
         elif self.state.state == "task":
-            answer = self._task_loop(message.text)
+            answer = self._task_loop(message.text, send_status=send_status)
         else:
             answer = "Agent not initialized. Start commant '/init'."
         return answer
     
-    def own_task(self):
+    def own_task(self, send_status: Callable[[str], None] | None = None) -> str:
         self.state.state = "task"
         self.state.current_task = "own_task"
         self.task_manager.restart_task("own_task")
-        return self._task_loop("")
+        if send_status:
+            send_status("Starting autonomous task loop...")
+        return self._task_loop("", send_status=send_status)
     
-    def identity_rethink(self) -> str:
+    def identity_rethink(self, send_status: Callable[[str], None] | None = None) -> str:
         """Trigger an identity rethinking process pulling recent history."""
         self.state.state = "task"
         self.state.current_task = "identity_rethink"
@@ -148,9 +155,11 @@ class LoopManager:
         conversation = self.conversation_history.get_records(8)
         for record in conversation:
             self.task_history.add_record(record.role, record.message)
-        return self._task_loop("")
+        if send_status:
+            send_status("Rethinking identity based on history...")
+        return self._task_loop("", send_status=send_status)
 
-    def _task_loop(self, input: str) -> str:
+    def _task_loop(self, input: str, send_status: Callable[[str], None] | None = None) -> str:
         def _check_and_clear(answer: str) -> bool:
             # Post-step callback
             subtask = self.task_manager.get_current_subtask(self.state.current_task) 
@@ -185,18 +194,20 @@ class LoopManager:
             return str(e)
         if subtask.interactive:
             # Interactive loop
-            answer = self._request_loop(input, task=True, tool_available=subtask.tool_available)
+            answer = self._request_loop(input, task=True, tool_available=subtask.tool_available, send_status=send_status)
             if subtask.stop_word in answer:
                 answer = answer.replace(subtask.stop_word, "")
                 if _check_and_clear(answer):
                     return answer
                 self._summarise(task=True, memory=False)
-                return self._task_loop("")
+                return self._task_loop("", send_status=send_status)
             return answer
         else:
             # Non-interactive loop
             for i in range(STEP_PER_TASK_LIMIT):
-                answer = self._request_loop(input, task=True, tool_available=subtask.tool_available)
+                if send_status:
+                    send_status(f"Task step {i+1}...")
+                answer = self._request_loop(input, task=True, tool_available=subtask.tool_available, send_status=send_status)
                 if subtask.stop_word in answer:
                     answer = answer.replace(subtask.stop_word, "")
                     
@@ -213,7 +224,7 @@ class LoopManager:
                     input = "Continue."
             return "Loop exceed limit of steps per task. But task was not completed."
 
-    def _request_loop(self, input: AgentMessage | str, task: bool = False, tool_available: bool = True) -> str:
+    def _request_loop(self, input: AgentMessage | str, task: bool = False, tool_available: bool = True, send_status: Callable[[str], None] | None = None) -> str:
         # Normalize input
         if isinstance(input, str):
             input = AgentMessage(text=input)
@@ -228,6 +239,8 @@ class LoopManager:
             payload = self._make_payload(tool=tool_available, history=True, task=True)
         else:
             payload = self._make_payload()
+        if send_status:
+            send_status("Generating response...")
         answer = self.providers_manager.generation_request(
             self.model, payload,
             encode_images=True,
@@ -236,12 +249,17 @@ class LoopManager:
         _add_record("model", answer)
         toolcall = self._parse_toolcall(answer)
         while toolcall:
+            if send_status:
+                send_status(f"Executing tool <code>{toolcall['name']}</code>...")
             tool_result = self._execute_tool(toolcall)
             _add_record("tool", self.mcp_connector.generate_prompt("tool_result_template", {"name": toolcall["name"], "result": tool_result}))
             if task:
                 payload = self._make_payload(tool=tool_available, history=True, task=True)
             else:
                 payload = self._make_payload()
+            
+            if send_status:
+                send_status("Analyzing tool result...")
             answer = self.providers_manager.generation_request(
                 self.model, payload,
                 encode_images=True,

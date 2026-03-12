@@ -2,9 +2,11 @@ from dataclasses import dataclass
 import telebot
 import os
 import json
-import queue
 import time
 import uuid
+
+from imports.messaging.queue_manager import MessageBus
+from imports.messaging.message_models import AgentRequest, AgentResponse
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -18,18 +20,23 @@ if TOKEN:
 else:
     bot = None
 
-def bot_responce(message: str, chat_id: str) -> bool:
+def telegram_response_handler(response: AgentResponse) -> None:
     if bot:
-        bot.send_message(chat_id, message)
-        return True
-    return False
+        # Check if the response type is an error, status update, or final response
+        if response.type == "status_update":
+            bot.send_message(response.chat_id, f"<i>{response.text}</i>", parse_mode="HTML")
+        else:
+            bot.send_message(response.chat_id, response.text)
 
-def bot_process(request_queue: queue.Queue, secret_path: str):
+def bot_process(bus: MessageBus, secret_path: str):
     if bot:
+        # Register the Telegram frontend to receive responses
+        bus.register_frontend("telegram", telegram_response_handler)
+        
         secret_keeper = SecretKeeper(secret_path)
         bot_username = bot.get_me().username
         link = secret_keeper.create_link(bot_username)
-        request_queue.put(TelegramBotMessage("report", f"Link: {link}"))
+        print(f"Telegram Bot Link: {link}")
 
         @bot.message_handler(commands=["start"])
         def start(message):
@@ -47,26 +54,41 @@ def bot_process(request_queue: queue.Queue, secret_path: str):
         @bot.message_handler(commands=["init"])
         def init_agent(message):
             if secret_keeper.check_user(message.from_user.id):
-                request_queue.put(TelegramBotMessage("action", "init", message.chat.id))
+                bus.send_to_backend(AgentRequest(
+                    frontend_type="telegram",
+                    chat_id=message.chat.id,
+                    action="init",
+                    text=""
+                ))
                 bot.send_chat_action(message.chat.id, "typing")
             else:
-                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+                print(f"User is not allowed. User id: {message.from_user.id}")
         
         @bot.message_handler(commands=["own_task"])
         def own_task(message):
             if secret_keeper.check_user(message.from_user.id):
-                request_queue.put(TelegramBotMessage("action", "own_task", message.chat.id))
+                bus.send_to_backend(AgentRequest(
+                    frontend_type="telegram",
+                    chat_id=message.chat.id,
+                    action="own_task",
+                    text=""
+                ))
                 bot.send_chat_action(message.chat.id, "typing")
             else:
-                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+                print(f"User is not allowed. User id: {message.from_user.id}")
         
         @bot.message_handler(commands=["identity_rethink"])
         def identity_rethink(message):
             if secret_keeper.check_user(message.from_user.id):
-                request_queue.put(TelegramBotMessage("action", "identity_rethink", message.chat.id))
+                bus.send_to_backend(AgentRequest(
+                    frontend_type="telegram",
+                    chat_id=message.chat.id,
+                    action="identity_rethink",
+                    text=""
+                ))
                 bot.send_chat_action(message.chat.id, "typing")
             else:
-                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+                print(f"User is not allowed. User id: {message.from_user.id}")
 
         @bot.message_handler(content_types=['photo'])
         def handle_photo(message):
@@ -80,39 +102,42 @@ def bot_process(request_queue: queue.Queue, secret_path: str):
                 file_info = bot.get_file(file_id)
                 image_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_info.file_path}"
                 caption = message.caption or ""
-                request_queue.put(TelegramBotMessage("message", caption, message.chat.id, image_url=image_url))
+                
+                # The image logic previously in main needs to happen BEFORE model router,
+                # but to avoid blocking telegram, backend worker handles it.
+                # However, the previous logic used ImageManager.save_image_from_url inside main loop.
+                # To support this cleanly, we'll pass the image_url temporarily through the text or image_hash slot,
+                # but it's better to add image_url to AgentRequest explicitly since ImageManager downloads it.
+                bus.send_to_backend(AgentRequest(
+                    frontend_type="telegram",
+                    chat_id=message.chat.id,
+                    action="message",
+                    text=f"[IMAGE_URL_ATTACHED]:{image_url}\n{caption}"
+                ))
                 bot.send_chat_action(message.chat.id, "typing")
             else:
-                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+                print(f"User is not allowed. User id: {message.from_user.id}")
 
         @bot.message_handler(func=lambda message: True)
-        def hendle_message(message):
+        def handle_message(message):
             if secret_keeper.check_user(message.from_user.id):
-                request_queue.put(TelegramBotMessage("message", message.text, message.chat.id))
+                bus.send_to_backend(AgentRequest(
+                    frontend_type="telegram",
+                    chat_id=message.chat.id,
+                    action="message",
+                    text=message.text
+                ))
                 bot.send_chat_action(message.chat.id, "typing")
             else:
-                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+                print(f"User is not allowed. User id: {message.from_user.id}")
 
         bot.infinity_polling(interval=0, timeout=20)
     else:
-        request_queue.put(TelegramBotMessage("report", "Bot is not initialized"))
+        print("Telegram bot is not initialized")
 
 def stop_bot():
     if bot:
         bot.stop_polling()
-
-@dataclass
-class TelegramBotMessage:
-    type: str
-    message: str
-    chat_id: str
-    image_url: str | None
-    def __init__(self, type: str, message: str, chat_id: str = "",
-                 image_url: str | None = None):
-        self.type = type
-        self.message = message
-        self.chat_id = chat_id
-        self.image_url = image_url
 
 class SecretKeeper:
     def __init__(self, path: str):

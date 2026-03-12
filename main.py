@@ -4,11 +4,15 @@ dotenv.load_dotenv()
 from imports.loop_manager import LoopManager, AgentMessage
 from imports.image_manager import ImageManager
 from prompt_toolkit import PromptSession
-from imports.plugins.telegram import bot_responce, bot_process, stop_bot, TelegramBotMessage
+from imports.plugins.telegram import bot_process, stop_bot
 from threading import Thread
 import json
-import queue
 import time
+
+from imports.messaging.queue_manager import MessageBus
+from imports.messaging.message_models import AgentRequest, AgentResponse
+from imports.messaging.frontend_listener import frontend_listener_loop
+from imports.messaging.backend_worker import backend_worker_loop
 
 CONFIG_PATH = "config.json"
 USE_TELEGRAM_FRONTEND = True
@@ -24,80 +28,82 @@ def load_config(path: str) -> dict | None:
         print(f"Unable to decode config! Error: {e}")
     return None
 
-def concole_input_loop(request_queue: queue.Queue):
+def console_input_loop(bus: MessageBus) -> None:
     input_session = PromptSession()
     while True:
         user_input = input_session.prompt("Enter your message: ")
         if user_input == "/bye":
             break
-        request_queue.put(TelegramBotMessage("message", user_input, "console"))
+        bus.send_to_backend(AgentRequest(
+            frontend_type="console",
+            chat_id="console",
+            action="message",
+            text=user_input
+        ))
 
-def autonomous_loop(request_queue: queue.Queue):
+def autonomous_loop(bus: MessageBus) -> None:
     if AUTONOMOUS_LOOP_INTERVAL > 0:
         while True:
-            request_queue.put(TelegramBotMessage("action", "autonomous_loop", "console"))
+            bus.send_to_backend(AgentRequest(
+                frontend_type="console",
+                chat_id="console",
+                action="own_task",
+                text=""
+            ))
             time.sleep(AUTONOMOUS_LOOP_INTERVAL)
 
 def main():
     config = load_config(CONFIG_PATH)
-    request_queue = queue.Queue()
+    if not config:
+        return
+
+    bus = MessageBus()
     image_manager = ImageManager()
+    loop_manager = LoopManager(config, image_manager)
 
-    if config:
-        if USE_TELEGRAM_FRONTEND:
-            front_end_thread = Thread(target=bot_process, args=(request_queue, config["plugins"]["telegram"]["secret_path"]), daemon=True)
-            front_end_thread.start()
+    # Handlers for dispatched messages
+    def console_response_handler(response: AgentResponse) -> None:
+        if response.type == "final_response":
+            print(f"model: {response.text}")
+        elif response.type == "status_update":
+            print(f"[STATUS]: {response.text}")
+        elif response.type == "error":
+            print(f"[ERROR]: {response.text}")
         else:
-            front_end_thread = Thread(target=concole_input_loop, args=(request_queue,), daemon=True)
-            front_end_thread.start()
+            print(f"[{response.type.upper()}]: {response.text}")
 
-        autonomous_thread = Thread(target=autonomous_loop, args=(request_queue,), daemon=True)
-        autonomous_thread.start()
+    bus.register_frontend("console", console_response_handler)
+    # Telegram registers itself in bot_process
 
-        loop_manager = LoopManager(config, image_manager)
-        
+    # 1. Start generic queues processor
+    frontend_listener_thread = Thread(target=frontend_listener_loop, args=(bus,), daemon=True)
+    frontend_listener_thread.start()
+    
+    # 2. Start the Backend Processing loop
+    backend_thread = Thread(target=backend_worker_loop, args=(bus, loop_manager), daemon=True)
+    backend_thread.start()
+
+    # 3. Start Frontends
+    if USE_TELEGRAM_FRONTEND:
+        front_end_thread = Thread(target=bot_process, args=(bus, config["plugins"]["telegram"]["secret_path"]), daemon=True)
+        front_end_thread.start()
+    else:
+        front_end_thread = Thread(target=console_input_loop, args=(bus,), daemon=True)
+        front_end_thread.start()
+
+    autonomous_thread = Thread(target=autonomous_loop, args=(bus,), daemon=True)
+    autonomous_thread.start()
+
+    # Wait indefinitely until interrupted
+    try:
         while True:
-            try:
-                message = request_queue.get()
-                if message.type == "message":
-                    # Process image if present
-                    image_hash = None
-                    if hasattr(message, 'image_url') and message.image_url:
-                        try:
-                            image_hash = image_manager.save_image_from_url(message.image_url)
-                        except Exception as e:
-                            print(f"Failed to download image: {e}")
-                    
-                    agent_message = AgentMessage(
-                        text=message.message or "",
-                        image_hash=image_hash,
-                    )
-                    answer = loop_manager.router(agent_message)
-                    if message.chat_id == "console":
-                        print(f"model: {answer}")
-                    else:
-                        bot_responce(answer, message.chat_id)
-                elif message.type == "report":
-                    print(message.message)
-                elif message.type == "action":
-                    if message.message == "init":
-                        answer = loop_manager.init_agent()
-                        bot_responce(answer, message.chat_id)
-                    elif message.message == "own_task":
-                        answer = loop_manager.own_task()
-                        bot_responce(answer, message.chat_id)
-                    elif message.message == "identity_rethink":
-                        answer = loop_manager.identity_rethink()
-                        bot_responce(answer, message.chat_id)
-                else:
-                    print(f"Unknown message type: {message.type}")
-            except KeyboardInterrupt:
-                if USE_TELEGRAM_FRONTEND:
-                    print("\nStopping Telegram bot...")
-                    stop_bot()
-                else:
-                    print("\nShutting down console loop...")
-                break
+            time.sleep(1)
+    except KeyboardInterrupt:
+        if USE_TELEGRAM_FRONTEND:
+            print("\nStopping Telegram bot...")
+            stop_bot()
+        else:
+            print("\nShutting down console loop...")
 
 if __name__ == "__main__":
     main()

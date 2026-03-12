@@ -52,7 +52,7 @@ class MemoryRAG:
         self,
         query: str,
         limit: int = 5,
-        similarity_threshold: float = 0.8,
+        similarity_threshold: float = 0.75,
         filters: dict | None = None
     ) -> list[str]:
         """Search memories by semantic similarity with optional metadata filters.
