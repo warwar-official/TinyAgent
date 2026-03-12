@@ -4,12 +4,12 @@ TinyAgent is a lightweight AI agent designed to interact with users via terminal
 
 ## Features
 
-- **MCP Architecture**: Modular server-based design where tools, prompts, and retrieval are handled by independent MCP servers connected through an `MCPConnector`. Easy to extend with new servers.
+- **Dynamic MCP Architecture**: Modular server-based design where tools, prompts, and retrieval are handled by independent, configurable MCP servers. The standard set (`base_tools`, `prompt_builder`, `retrieval`) is loaded dynamically via a unified `tools/mcp_config.json`, which also natively supports future integration with remote JSON-RPC APIs.
 - **Image Processing (Vision)**: Accepts photos via Telegram, stores them locally, and sends base64-encoded images to vision-capable LLMs (Google Gemini, OpenAI). Models can be configured with `vision_enabled` flag.
 - **Document Retrieval (RAG)**: `RetrievalMCP` server allows the agent to index local files and web pages into a vector knowledge base and retrieve relevant chunks on demand.
 - **CLI & Telegram Interface**: Interactive prompt-based terminal session (powered by `prompt_toolkit`) or Telegram bot frontend with photo support.
 - **Dynamic Providers & Models**: Configurable model API endpoints (Google-compatible and OpenAI-compatible structures) with separate main and summary models.
-- **Tool Calling System**: Extendable tool framework supporting web searches, URL fetching, weather fetching, file reading, and file writing — all managed via MCP.
+- **Tool Calling System**: Extendable tool framework supporting web searches, URL fetching, weather fetching, file reading, and file writing. Tools and their configurations are defined entirely in `mcp_config.json` without modifying base Python logic.
 - **RAG & Vector Memory**: Context-awareness across multiple sessions using Qdrant vector database with FastEmbed (`intfloat/multilingual-e5-large`) to recall, embed, and merge long-term memories.
 - **Automated Summarization**: Extracts history states and memories when context windows approach boundaries to reduce token overhead. Summarization runs without images (`encode_images=False`) for efficiency.
 
@@ -38,12 +38,15 @@ TinyAgent is a lightweight AI agent designed to interact with users via terminal
 
 ## Configuration
 
-Settings are managed within `config.json`.
+Settings are managed within two main configuration files: `config.json` for agent properties, and `tools/mcp_config.json` for MCP routes.
 
-- **`agent.model`** — Main LLM model config. Set `vision_enabled: true` for models that support image inputs.
-- **`agent.summary_model`** — Model used for summarization and memory extraction (typically `vision_enabled: false`).
-- **`tools`** — Tool descriptions and parameters. Tools are loaded dynamically by `BaseToolsMCP`.
-- **`context`** — Memory models, storage locations, and flags. The memory database uses `./data/memory/db/` (Qdrant) and history resides in `./data/history/`.
+- **`config.json`**:
+  - **`agent.model`** — Main LLM model config. Set `vision_enabled: true` for models that support image inputs.
+  - **`agent.summary_model`** — Model used for summarization and memory extraction.
+  - **`context`** — Memory models, storage locations, and flags. Database uses `./data/memory/db/` (Qdrant). The `mcp_config_path` points to the primary JSON defining your active tools.
+- **`tools/mcp_config.json`**:
+  - Defines the array of active servers (either `local_class` Python models or `remote` endpoints).
+  - Explicitly documents all tools, prompts, and specialized abilities for dynamic injection.
 
 ### Telegram Frontend Integration
 TinyAgent supports interacting via Telegram with **text and photo** messages:
@@ -77,18 +80,23 @@ python main.py
 ```
 imports/
 ├── mcp/
-│   ├── base.py              # MCPServer base class
-│   ├── connector.py          # MCPConnector — aggregates and routes
-│   ├── base_tools_mcp.py     # Tool loading and execution
-│   ├── prompt_builder_mcp.py # System prompt assembly
-│   └── retrieval_mcp.py      # Document retrieval (add_file, add_url, retrieve)
-├── image_manager.py          # Image download, storage, base64 encoding
-├── loop_manager.py           # Agent inference loop and orchestration
-├── history_manager.py        # Dialogue history with image support
-├── memory_rag.py             # Long-term vector memory (Qdrant)
-├── providers_manager.py      # LLM API request handling (Google, OpenAI)
-├── task_manager.py           # Multi-step task orchestration
+│   ├── base.py                   # MCPServer base class
+│   ├── connector.py              # MCPConnector — config parser and command router
+│   └── remote.py                 # RemoteMCPServer — JSON-RPC HTTP wrapper
+├── image_manager.py              # Image download, storage, base64 encoding
+├── loop_manager.py               # Agent inference loop and orchestration
+├── history_manager.py            # Dialogue history with image support
+├── memory_rag.py                 # Long-term vector memory (Qdrant)
+├── providers_manager.py          # LLM API request handling (Google, OpenAI)
+├── task_manager.py               # Multi-step task orchestration
+├── tools/                        # Base Python tools (web_search, etc.)
 └── plugins/
-    └── telegram.py           # Telegram bot frontend
+    └── telegram.py               # Telegram bot frontend
+    
+tools/
+├── mcp_config.json               # Main orchestration template for servers, tools, and abilities
+├── basetools_mcp.py              # Tool loading and execution interface
+├── prompt_builder_mcp.py         # System prompt assembly
+└── retrieval_mcp.py              # Document retrieval (add_file, add_url, retrieve)
 ```
 
