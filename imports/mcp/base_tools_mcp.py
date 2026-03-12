@@ -11,12 +11,18 @@ class BaseToolsMCP(MCPServer):
     are loaded dynamically and called exactly as before.
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, prompts: dict) -> None:
         self._tool_configs: list[dict] = config.get("tools", [])
         self._tool_table: dict[str, Any] = self._load_tools(self._tool_configs)
+        self._ability_text: str = prompts.get("ability_prompt", "")
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # RPC handlers
+    # ------------------------------------------------------------------
+
+    def _rpc_ability_prompt(self, params: dict) -> str:
+        """Return the agent's core ability prompt (think-mode instructions)."""
+        return self._ability_text
     # ------------------------------------------------------------------
 
     @staticmethod

@@ -39,7 +39,8 @@
             "merge_model": {
                 "model_id": "gemma-3-4b-it",
                 "provider": "gemini",
-                "api_key_name": "GEMINI_API_KEY"
+                "api_key_name": "GEMINI_API_KEY",
+                "vision_enabled": false
             }
         }
     },

@@ -80,10 +80,14 @@ def main():
                 elif message.type == "report":
                     print(message.message)
                 elif message.type == "action":
-                    if message.message == "autonomous_loop":
-                        loop_manager.autonomous_loop()
-                    elif message.message == "init":
+                    if message.message == "init":
                         answer = loop_manager.init_agent()
+                        bot_responce(answer, message.chat_id)
+                    elif message.message == "own_task":
+                        answer = loop_manager.own_task()
+                        bot_responce(answer, message.chat_id)
+                    elif message.message == "identity_rethink":
+                        answer = loop_manager.identity_rethink()
                         bot_responce(answer, message.chat_id)
                 else:
                     print(f"Unknown message type: {message.type}")

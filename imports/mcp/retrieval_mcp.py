@@ -49,6 +49,26 @@ class RetrievalMCP(MCPServer):
     # RPC handlers
     # ------------------------------------------------------------------
 
+    def _rpc_ability_prompt(self, params: dict) -> str:
+        """Describe the knowledge base capabilities to the agent."""
+        return (
+            "Knowledge Base Access (RAG): \n"
+            "You have access to a persistent Knowledge Base containing indexed local files and web pages.\n"
+            "> Retrieval: You MUST use the retrieve_knowledge tool to fetch factual data, exact quotes, or document contents BEFORE answering any questions related to indexed information. You can filter by source (file path or URL) for precision.\n"
+            "> Indexing: Use the add_knowledge_file or add_knowledge_url tools to index new documents when the user asks you to read, learn, or save a new file or webpage.\n"
+            "> CRITICAL RULE: If retrieve_knowledge returns empty results, DO NOT hallucinate or guess the document's content. Explicitly inform the user that the information is not present in the Knowledge Base.\n"
+        )
+        
+        """return (
+            "You have access to a Knowledge Base that may contain indexed documents "
+            "(local files and web pages). Use the 'retrieve_knowledge' tool when you "
+            "need factual information, data from documents, or answers that may have "
+            "been previously indexed. You can also add new documents using "
+            "'add_knowledge_file' or 'add_knowledge_url' tools. "
+            "When retrieving, you can optionally filter by source (file path or URL) "
+            "to narrow results to a specific document."
+        )"""
+
     def _rpc_tool_list(self, params: dict) -> list[dict]:
         return [
             {
@@ -90,6 +110,10 @@ class RetrievalMCP(MCPServer):
                             "type": "integer",
                             "description": "Number of results to return.",
                             "default": 5,
+                        },
+                        "source": {
+                            "type": "string",
+                            "description": "Optional. Filter results to chunks from this source (file path or URL).",
                         },
                     },
                     "required": ["query"],
@@ -174,23 +198,38 @@ class RetrievalMCP(MCPServer):
         result["tool_result"] = f"Indexed {len(chunks)} chunks from {url}"
         return result
 
-    def _retrieve_knowledge(self, query: str, k: int = 5) -> dict:
+    def _retrieve_knowledge(self, query: str, k: int = 5, source: str | None = None) -> dict:
         result = {"tool_name": "retrieve_knowledge", "tool_arguments": {"query": query, "k": k},
                   "tool_result": None, "truncate": False, "error": None}
 
         query_vector = list(self._embedding_model.embed([query]))[0].tolist()
+
+        # Optional source filter
+        query_filter = None
+        if source:
+            query_filter = models.Filter(
+                must=[models.FieldCondition(
+                    key="source",
+                    match=models.MatchValue(value=source),
+                )]
+            )
+
         points = self._client.query_points(
             collection_name=COLLECTION_NAME,
             query=query_vector,
+            query_filter=query_filter,
             limit=k,
         ).points
 
-        texts = []
+        results = []
         for point in points:
             payload = point.payload or {}
-            texts.append(payload.get("text", ""))
+            results.append({
+                "text": payload.get("text", ""),
+                "source": payload.get("source", ""),
+            })
 
-        result["tool_result"] = texts
+        result["tool_result"] = results
         return result
 
     # ------------------------------------------------------------------

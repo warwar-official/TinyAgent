@@ -11,6 +11,8 @@ from imports.mcp.retrieval_mcp import RetrievalMCP
 import json
 import re
 import os
+import threading
+import queue
 
 DEBUG = os.getenv("DEBUG", False)
 
@@ -71,27 +73,32 @@ class LoopManager:
         # Memory manager
         if self.config["context"]["memory"]["active"]:
             self.memory = MemoryRAG(self.config)
+            # Memory worker thread
+            self.memory_queue = queue.Queue()
+            self.memory_worker_thread = threading.Thread(target=self._memory_worker, daemon=True)
+            self.memory_worker_thread.start()
         else:
             self.memory = None
         # Prompts and state 
         self.retrived_memory = "None"
-        self.prompts = self._load_prompts(self.config["context"]["prompts_path"])
-        self.state = self._load_state(self.config["context"]["state_path"])
+        prompts = self._load_prompts(self.config["context"]["prompts_path"])
         # Image manager (shared with main.py)
         self.image_manager = image_manager
-        # MCP servers and connector
+        # MCP servers and connector (must be before _load_state since _init_state uses it)
         mcp_servers = [
-            BaseToolsMCP(self.config),
-            PromptBuilderMCP(self.prompts),
+            BaseToolsMCP(self.config, prompts),
+            PromptBuilderMCP(prompts),
         ]
         if self.config["context"]["memory"]["active"] and self.memory:
             mcp_servers.append(RetrievalMCP(self.memory.client, self.memory.embedding_model))
         self.mcp_connector = MCPConnector(mcp_servers)
+        # Load state (after connector, since _init_state fallback uses it)
+        self.state = self._load_state(self.config["context"]["state_path"])
 
     def init_agent(self):
         if self.state.state == "none":
             self.state.state = "task"
-            self.state.identity = self.prompts["default_identity_prompt"]
+            self.state.identity = self.mcp_connector.generate_prompt("default_identity_prompt", {})
             self.state.current_task = "identity_setup"
             self.task_manager.restart_task("identity_setup")
             return self._task_loop("")
@@ -111,10 +118,19 @@ class LoopManager:
             answer = "Agent not initialized. Start commant '/init'."
         return answer
     
-    def autonomous_loop(self):
+    def own_task(self):
         self.state.state = "task"
         self.state.current_task = "own_task"
         self.task_manager.restart_task("own_task")
+        return self._task_loop("")
+    
+    def identity_rethink(self):
+        self.state.state = "task"
+        self.state.current_task = "identity_rethink"
+        self.task_manager.restart_task("identity_rethink")
+        conversation = self.conversation_history.get_records(8)
+        for record in conversation:
+            self.task_history.add_record(record.role, record.message)
         return self._task_loop("")
 
     def _task_loop(self, input: str) -> str:
@@ -144,7 +160,7 @@ class LoopManager:
             if self.task_manager.get_task_status(self.state.current_task) == "active":
                 subtask = self.task_manager.get_current_subtask(self.state.current_task)
                 instruction = subtask.instruction
-                instruction += self.prompts["task_stopword_prompt"].format(instruction=subtask.instruction, stop_word=subtask.stop_word)
+                instruction += self.mcp_connector.generate_prompt("task_stopword_prompt", {"instruction": subtask.instruction, "stop_word": subtask.stop_word})
                 input = instruction
             else:
                 subtask = self.task_manager.get_current_subtask(self.state.current_task)
@@ -204,7 +220,7 @@ class LoopManager:
         toolcall = self._parse_toolcall(answer)
         while toolcall:
             tool_result = self._execute_tool(toolcall)
-            _add_record("tool", self.prompts["tool_result_template"].format(name=toolcall["name"], result=tool_result))
+            _add_record("tool", self.mcp_connector.generate_prompt("tool_result_template", {"name": toolcall["name"], "result": tool_result}))
             if task:
                 payload = self._make_payload(tool=tool_available, history=True, task=True)
             else:
@@ -227,12 +243,12 @@ class LoopManager:
     def _summarise(self, task: bool = False, memory: bool = True) -> None:
         # Creating summary
         if task:
-            conversation_summary_prompt = self.prompts["task_summary_prompt"]
+            conversation_summary_prompt = self.mcp_connector.generate_prompt("task_summary_prompt", {})
             prev_records = self.task_history.get_records()
             prev_records.insert(0, HistoryRecord("model", "Current task summary: " + self.state.task_summary))
             source = "task"
         else:
-            conversation_summary_prompt = self.prompts["conversation_summary_prompt"]
+            conversation_summary_prompt = self.mcp_connector.generate_prompt("conversation_summary_prompt", {})
             prev_records = self.conversation_history.get_records()
             if len(prev_records) < MIN_SUMURIZE_LEN:
                 if DEBUG:
@@ -250,16 +266,7 @@ class LoopManager:
         # Creating memories
         if memory:
             if self.config["context"]["memory"]["active"]:
-                memory_symmary_prompt = self.prompts["memory_summary_prompt"]
-                payload = prev_records + [HistoryRecord("user", memory_symmary_prompt)]
-                raw_memory_summary = self.providers_manager.generation_request(self.summary_model, payload, encode_images=False)
-                memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
-                memory_summary_list = json.loads(memory_summary)["important_facts"]
-                if DEBUG:
-                    print("\n" + str(memory_summary_list) + "\n")
-                for fact in memory_summary_list:
-                    if self.memory:
-                        self.memory.add_memory(fact.strip(), source, "summary")
+                self.memory_queue.put((list(prev_records), source))
         if task:
             self.task_history.set_old_records_mark(5)
         else:
@@ -270,6 +277,23 @@ class LoopManager:
             self.retrived_memory = self.memory.search(user_input)
             if self.retrived_memory == []:
                 self.retrived_memory = "None"
+
+    def _memory_worker(self) -> None:
+        while True:
+            try:
+                prev_records, source = self.memory_queue.get()
+                memory_summary_prompt = self.mcp_connector.generate_prompt("memory_summary_prompt", {})
+                payload = prev_records + [HistoryRecord("user", memory_summary_prompt)]
+                raw_memory_summary = self.providers_manager.generation_request(self.summary_model, payload, encode_images=False)
+                memory_summary = raw_memory_summary[raw_memory_summary.find("{"):raw_memory_summary.rfind("}") + 1]
+                memory_summary_list = json.loads(memory_summary).get("important_facts", [])
+                if DEBUG:
+                    print("\n" + str(memory_summary_list) + "\n")
+                for fact in memory_summary_list:
+                    if self.memory:
+                        self.memory.add_memory(fact.strip(), source, "summary")
+            except Exception as e:
+                print(f"Failed extracting background memories: {e}")
 
     def _make_payload(self, tool: bool = True, history: bool = True, task: bool = False) -> list[HistoryRecord]:
         # Tool description
@@ -290,9 +314,11 @@ class LoopManager:
         else:
             task_info = ""
         # System prompt via MCP
+        ability_prompt = self.mcp_connector.get_ability_prompt()
         system_prompt = self.mcp_connector.generate_prompt("system_prompt", {
             "identity": self.state.identity,
             "tool_description": tool_description,
+            "ability_prompt": ability_prompt,
             "retrieved_memory": self.retrived_memory if self.retrived_memory else "None",
             "autonomous_notes": self.state.autonomouse_notes,
             "task_info": task_info,
@@ -302,7 +328,7 @@ class LoopManager:
         summary = []
         if task:
             if self.state.task_summary != "":
-                summary = [HistoryRecord("model", self.state.task_summary)]
+                summary = [HistoryRecord("model", self.state.conversation_summary)] + [HistoryRecord("model", self.state.task_summary)]
         else:
             if self.state.conversation_summary != "":
                 summary = [HistoryRecord("model", self.state.conversation_summary)]
@@ -316,7 +342,8 @@ class LoopManager:
             payload = system_record + summary
         return payload
 
-    def _load_prompts(self, path: str) -> dict:
+    @staticmethod
+    def _load_prompts(path: str) -> dict:
         try:
             with open(path, "r") as f:
                 return json.load(f)
@@ -344,9 +371,10 @@ class LoopManager:
             print(f"Unable to write state! Error: {e}")
     
     def _init_state(self) -> LoopState:
+        default_identity = self.mcp_connector.generate_prompt("default_identity_prompt", {})
         return LoopState(
             state="none",
-            identity=self.prompts["default_identity_prompt"],
+            identity=default_identity,
             conversation_summary="",
             task_summary="",
             autonomouse_notes="",
@@ -383,13 +411,13 @@ class LoopManager:
     
     def _execute_tool(self, toolcall: dict) -> str:
         """Execute a tool via MCP and optionally summarize long results."""
-        tool_summary_prompt = self.prompts["tool_summary_prompt"]
         try:
             result = self.mcp_connector.execute_tool(toolcall["name"], toolcall["arguments"])
             if result.get("tool_result"):
                 tool_result_str = str(result["tool_result"])
                 if len(tool_result_str) > 5000:
-                    payload = [HistoryRecord("user", tool_summary_prompt.format(tool_name=toolcall["name"], result=tool_result_str))]
+                    summary_prompt = self.mcp_connector.generate_prompt("tool_summary_prompt", {"tool_name": toolcall["name"], "result": tool_result_str})
+                    payload = [HistoryRecord("user", summary_prompt)]
                     result["tool_result"] = self.providers_manager.generation_request(self.summary_model, payload, encode_images=False)
                     result["summarized"] = True
         except Exception as e:

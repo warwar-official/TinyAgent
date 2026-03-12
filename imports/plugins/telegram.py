@@ -11,7 +11,9 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if TOKEN:
     bot = telebot.TeleBot(TOKEN)
     bot.set_my_commands([
-        telebot.types.BotCommand("init", "Initialize agent"),
+        telebot.types.BotCommand("init", "Initialize agent."),
+        telebot.types.BotCommand("own_task", "Start autonomous task loop. Unstable if agent have no global target."),
+        telebot.types.BotCommand("identity_rethink", "Update identity. Based on previous conversation."),
     ])
 else:
     bot = None
@@ -46,6 +48,22 @@ def bot_process(request_queue: queue.Queue, secret_path: str):
         def init_agent(message):
             if secret_keeper.check_user(message.from_user.id):
                 request_queue.put(TelegramBotMessage("action", "init", message.chat.id))
+                bot.send_chat_action(message.chat.id, "typing")
+            else:
+                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+        
+        @bot.message_handler(commands=["own_task"])
+        def own_task(message):
+            if secret_keeper.check_user(message.from_user.id):
+                request_queue.put(TelegramBotMessage("action", "own_task", message.chat.id))
+                bot.send_chat_action(message.chat.id, "typing")
+            else:
+                request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))
+        
+        @bot.message_handler(commands=["identity_rethink"])
+        def identity_rethink(message):
+            if secret_keeper.check_user(message.from_user.id):
+                request_queue.put(TelegramBotMessage("action", "identity_rethink", message.chat.id))
                 bot.send_chat_action(message.chat.id, "typing")
             else:
                 request_queue.put(TelegramBotMessage("report", f"User is not allowed. User id: {message.from_user.id} "))

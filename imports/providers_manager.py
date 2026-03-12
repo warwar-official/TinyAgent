@@ -35,7 +35,13 @@ class ProvidersManager:
         contents = []
         for record in payload:
             role = "user" if record.role.lower() in ["user", "tool", "system"] else "model"
-            parts: list[dict] = [{"text": record.message}]
+            
+            message_text = record.message
+            if record.role.lower() == "user":
+                timestamp = record.create_time.strftime("[%H:%M, %-d %B]")
+                message_text = f"{timestamp} {message_text}"
+                
+            parts: list[dict] = [{"text": message_text}]
 
             if encode_images and image_resolver and record.image_hash:
                 b64 = image_resolver(record.image_hash)
@@ -63,19 +69,24 @@ class ProvidersManager:
             if record.role.lower() == "system":
                 role = "system"
 
+            message_text = record.message
+            if record.role.lower() == "user":
+                timestamp = record.create_time.strftime("[%H:%M, %-d %B]")
+                message_text = f"{timestamp} {message_text}"
+
             if encode_images and image_resolver and record.image_hash:
                 b64 = image_resolver(record.image_hash)
                 if b64:
                     content = [
-                        {"type": "text", "text": record.message},
+                        {"type": "text", "text": message_text},
                         {"type": "image_url", "image_url": {
                             "url": f"data:image/jpeg;base64,{b64}"
                         }},
                     ]
                 else:
-                    content = record.message
+                    content = message_text
             else:
-                content = record.message
+                content = message_text
 
             messages.append({"role": role, "content": content})
         return {
