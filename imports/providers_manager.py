@@ -43,15 +43,16 @@ class ProvidersManager:
                 
             parts: list[dict] = [{"text": message_text}]
 
-            if encode_images and image_resolver and record.image_hash:
-                b64 = image_resolver(record.image_hash)
-                if b64:
-                    parts.append({
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": b64,
-                        }
-                    })
+            if encode_images and image_resolver and record.image_hashes:
+                for img_hash in record.image_hashes:
+                    b64 = image_resolver(img_hash)
+                    if b64:
+                        parts.append({
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": b64,
+                            }
+                        })
 
             contents.append({"role": role, "parts": parts})
         return {"contents": contents}
@@ -74,17 +75,17 @@ class ProvidersManager:
                 timestamp = record.create_time.strftime("[%H:%M, %-d %B]")
                 message_text = f"{timestamp} {message_text}"
 
-            if encode_images and image_resolver and record.image_hash:
-                b64 = image_resolver(record.image_hash)
-                if b64:
-                    content = [
-                        {"type": "text", "text": message_text},
-                        {"type": "image_url", "image_url": {
-                            "url": f"data:image/jpeg;base64,{b64}"
-                        }},
-                    ]
-                else:
-                    content = message_text
+            if encode_images and image_resolver and record.image_hashes:
+                content = [{"type": "text", "text": message_text}]
+                for img_hash in record.image_hashes:
+                    b64 = image_resolver(img_hash)
+                    if b64:
+                        content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{b64}"
+                            }
+                        })
             else:
                 content = message_text
 
@@ -153,7 +154,7 @@ class ProvidersManager:
         with open("payloads_log.json", "a") as f:
             payload_list = []
             for record in payload:
-                payload_list.append({"role": record.role, "message": record.message, "image_hash": record.image_hash})
+                payload_list.append({"role": record.role, "message": record.message, "image_hashes": record.image_hashes})
             json.dump(payload_list, f, indent=4, ensure_ascii=False)
             f.write(",\n")
             
@@ -188,7 +189,7 @@ class ProvidersManager:
             
         req = urllib.request.Request(
             request_url, 
-            data=json.dumps(rendered_payload).encode('utf-8'), 
+            data=json.dumps(rendered_payload, ensure_ascii=False).encode('utf-8'), 
             headers=headers, 
             method='POST'
         )

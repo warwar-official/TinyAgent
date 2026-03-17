@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 @dataclass
@@ -8,7 +8,7 @@ class AgentRequest:
     chat_id: str         # The unique dialog ID
     action: str          # e.g., "message", "init", "own_task", "identity_rethink"
     text: str = ""       # The text payload
-    image_hash: Optional[str] = None # The hashed image filename if present
+    image_hashes: list[str] = field(default_factory=list)  # List of image hashes
 
 @dataclass
 class AgentResponse:
@@ -17,3 +17,4 @@ class AgentResponse:
     chat_id: str         # The unique dialog ID
     type: str            # e.g., "final_response", "status_update", "error"
     text: str            # The text content to display
+    image_hashes: list[str] = field(default_factory=list)  # List of generated image hashes

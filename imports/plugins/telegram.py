@@ -14,19 +14,26 @@ if TOKEN:
     bot = telebot.TeleBot(TOKEN)
     bot.set_my_commands([
         telebot.types.BotCommand("init", "Initialize agent."),
-        telebot.types.BotCommand("own_task", "Start autonomous task loop. Unstable if agent have no global target."),
-        telebot.types.BotCommand("identity_rethink", "Update identity. Based on previous conversation."),
     ])
 else:
     bot = None
 
 def telegram_response_handler(response: AgentResponse) -> None:
     if bot:
-        # Check if the response type is an error, status update, or final response
         if response.type == "status_update":
             bot.send_message(response.chat_id, f"<i>{response.text}</i>", parse_mode="HTML")
         else:
+            # Send text response
             bot.send_message(response.chat_id, response.text)
+            # Send all generated images
+            if response.image_hashes:
+                from imports.image_manager import ImageManager
+                image_manager = ImageManager()
+                for img_hash in response.image_hashes:
+                    path = image_manager.get_image_path(img_hash)
+                    if path and os.path.isfile(path):
+                        with open(path, "rb") as photo:
+                            bot.send_photo(response.chat_id, photo)
 
 def bot_process(bus: MessageBus, secret_path: str):
     if bot:
@@ -63,51 +70,17 @@ def bot_process(bus: MessageBus, secret_path: str):
                 bot.send_chat_action(message.chat.id, "typing")
             else:
                 print(f"User is not allowed. User id: {message.from_user.id}")
-        
-        @bot.message_handler(commands=["own_task"])
-        def own_task(message):
-            if secret_keeper.check_user(message.from_user.id):
-                bus.send_to_backend(AgentRequest(
-                    frontend_type="telegram",
-                    chat_id=message.chat.id,
-                    action="own_task",
-                    text=""
-                ))
-                bot.send_chat_action(message.chat.id, "typing")
-            else:
-                print(f"User is not allowed. User id: {message.from_user.id}")
-        
-        @bot.message_handler(commands=["identity_rethink"])
-        def identity_rethink(message):
-            if secret_keeper.check_user(message.from_user.id):
-                bus.send_to_backend(AgentRequest(
-                    frontend_type="telegram",
-                    chat_id=message.chat.id,
-                    action="identity_rethink",
-                    text=""
-                ))
-                bot.send_chat_action(message.chat.id, "typing")
-            else:
-                print(f"User is not allowed. User id: {message.from_user.id}")
 
         @bot.message_handler(content_types=['photo'])
         def handle_photo(message):
             if secret_keeper.check_user(message.from_user.id):
-                # Reject multi-image uploads (media groups)
-                if message.media_group_id:
-                    bot.send_message(message.chat.id, "⚠️ Multiple images are not supported. Please send one image at a time.")
-                    return
                 # Get the highest resolution photo
                 file_id = message.photo[-1].file_id
                 file_info = bot.get_file(file_id)
                 image_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_info.file_path}"
                 caption = message.caption or ""
                 
-                # The image logic previously in main needs to happen BEFORE model router,
-                # but to avoid blocking telegram, backend worker handles it.
-                # However, the previous logic used ImageManager.save_image_from_url inside main loop.
-                # To support this cleanly, we'll pass the image_url temporarily through the text or image_hash slot,
-                # but it's better to add image_url to AgentRequest explicitly since ImageManager downloads it.
+                # Pass image URL through text for backend worker to download
                 bus.send_to_backend(AgentRequest(
                     frontend_type="telegram",
                     chat_id=message.chat.id,
@@ -190,6 +163,6 @@ class SecretKeeper:
     def _save_users(self):
         try:
             with open(self.path, "w") as f:
-                json.dump(self.allowed_users, f)
+                json.dump(self.allowed_users, f, ensure_ascii=False)
         except IOError as e:
             print(f"Unable to write users! Error: {e}")

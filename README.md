@@ -88,7 +88,6 @@ imports/
 ├── history_manager.py            # Dialogue history with image support
 ├── memory_rag.py                 # Long-term vector memory (Qdrant)
 ├── providers_manager.py          # LLM API request handling (Google, OpenAI)
-├── task_manager.py               # Multi-step task orchestration
 ├── tools/                        # Base Python tools (web_search, etc.)
 └── plugins/
     └── telegram.py               # Telegram bot frontend

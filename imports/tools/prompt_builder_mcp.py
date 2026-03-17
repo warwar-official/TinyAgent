@@ -34,6 +34,8 @@ class PromptBuilderMCP(MCPServer):
 
         builder = generators.get(name)
         if builder is None:
+            if name in self._prompts:
+                return self._prompts[name]
             raise ValueError(f"Unknown prompt: {name}")
 
         if builder == self._build_simple:

@@ -46,6 +46,26 @@ class ImageManager:
         self._save_index()
         return image_hash
 
+    def save_image_from_bytes(self, data: bytes, ext: str = "png") -> str:
+        """Save raw image *data* locally and return its MD5 hash."""
+        image_hash = hashlib.md5(data).hexdigest()
+
+        if image_hash in self._index:
+            return image_hash  # already stored
+
+        filename = f"{image_hash}.{ext}"
+        filepath = os.path.join(self.storage_dir, filename)
+
+        with open(filepath, "wb") as f:
+            f.write(data)
+
+        self._index[image_hash] = {
+            "filename": filename,
+            "path": filepath,
+        }
+        self._save_index()
+        return image_hash
+
     def get_image_path(self, image_hash: str) -> str | None:
         """Return the file path for the given hash, or ``None``."""
         entry = self._index.get(image_hash)

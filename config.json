@@ -19,18 +19,15 @@
             "vision_enabled": true
         },
         "summary_model": {
-            "model_id": "gemma-3-12b-it",
+            "model_id": "gemma-3-4b-it",
             "provider": "gemini",
             "api_key_name": "GEMINI_API_KEY",
-            "vision_enabled": false
+            "vision_enabled": true
         }
     },
     "context": {
         "prompts_path": "./data/prompts.json",
-        "conversation_history_path": "./data/history/conversation_history.json",
-        "task_history_path": "./data/history/task_history.json",
-        "tasks_path": "./data/tasks.json",
-        "state_path": "./data/state.json",
+        "history_path": "./data/history.json",
         "memory": {
             "active": true,
             "db_path": "./data/memory/db/",
@@ -43,7 +40,7 @@
                 "vision_enabled": false
             }
         },
-        "mcp_config_path": "./tools/mcp_config.json"
+        "mcp_config_path": "./data/mcp_config.json"
     },
     "plugins": {
         "telegram": {

@@ -1,0 +1,263 @@
+{
+    "servers": [
+        {
+            "name": "prompt_builder",
+            "type": "local_class",
+            "class": "imports.tools.prompt_builder_mcp.PromptBuilderMCP",
+            "init_params": {
+                "prompts_path": "./data/prompts.json"
+            },
+            "tools": [],
+            "prompts": [
+                {
+                    "name": "system_prompt",
+                    "description": "Builds the full system prompt for the agent."
+                },
+                {
+                    "name": "conversation_summary_prompt",
+                    "description": "Prompt for summarizing conversation history."
+                },
+                {
+                    "name": "task_summary_prompt",
+                    "description": "Prompt for summarizing task progress."
+                },
+                {
+                    "name": "memory_summary_prompt",
+                    "description": "Prompt for extracting long-term memory facts."
+                },
+                {
+                    "name": "tool_summary_prompt",
+                    "description": "Prompt for summarizing long tool results."
+                },
+                {
+                    "name": "tool_result_template",
+                    "description": "Template for formatting tool results in history."
+                },
+                {
+                    "name": "task_stopword_prompt",
+                    "description": "Prompt instructing the agent about task completion."
+                },
+                {
+                    "name": "default_identity_prompt",
+                    "description": "Default identity prompt for uninitialized agents."
+                },
+                {
+                    "name": "summary_role_prompt",
+                    "description": "Prompt for the Summary role."
+                },
+                {
+                    "name": "memory_creation_role_prompt",
+                    "description": "Prompt for the Memory Creation role."
+                },
+                {
+                    "name": "memory_retrieval_role_prompt",
+                    "description": "Prompt for the Memory Retrieval role."
+                },
+                {
+                    "name": "formatter_role_prompt",
+                    "description": "Prompt for the Formatter role."
+                },
+                {
+                    "name": "aggregator_role_prompt",
+                    "description": "Prompt for the Aggregator role."
+                },
+                {
+                    "name": "verifier_role_prompt",
+                    "description": "Prompt for the Verifier role."
+                },
+                {
+                    "name": "worker_role_prompt",
+                    "description": "Prompt for the Worker role."
+                },
+                {
+                    "name": "deconstructor_role_prompt",
+                    "description": "Prompt for the Task Deconstructor role."
+                },
+                {
+                    "name": "router_role_prompt",
+                    "description": "Prompt for the Router role."
+                }
+            ],
+            "abilities": []
+        },
+        {
+            "name": "base_tools",
+            "type": "local_class",
+            "class": "imports.tools.basetools_mcp.BaseToolsMCP",
+            "init_params": {},
+            "tools": [
+                {
+                    "name": "current_weather",
+                    "description": "Gets the current weather and forecast for a specific city. Use this when the user asks about weather conditions.",
+                    "parameters": {
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "The specific city name, e.g., 'Kyiv', 'Lviv'."
+                            }
+                        },
+                        "required": [
+                            "location"
+                        ]
+                    }
+                },
+                {
+                    "name": "web_search",
+                    "description": "Searches the web for a given query.",
+                    "parameters": {
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The query to search for"
+                            },
+                            "count": {
+                                "type": "integer",
+                                "description": "The number of results to return.",
+                                "default": 3,
+                                "minimum": 1,
+                                "maximum": 5
+                            }
+                        },
+                        "required": [
+                            "query"
+                        ]
+                    }
+                },
+                {
+                    "name": "web_fetch",
+                    "description": "Fetches the content of internet souces by URL. Returns clean text, links, and table data. It is not rendering images or scripts.",
+                    "parameters": {
+                        "properties": {
+                            "url": {
+                                "type": "string",
+                                "description": "The URL to fetch content from."
+                            }
+                        },
+                        "required": [
+                            "url"
+                        ]
+                    }
+                }
+            ],
+            "prompts": [],
+            "abilities": [
+                "Web Browsing Skills:\n1. Make a meainigful search query.\n2. Assess Snippets First: After using web_search, read the provided snippets. If they contain the complete answer to the user's query, STOP and provide the answer.\n3. Deep Dive: If the snippets are insufficient, use web_fetch on the most promising URL from the search results to read the full content.\n4. Handling Scraper Blocks: If web_fetch returns an empty result, an error, or asks for CAPTCHA, it means the site is blocking automated access. DO NOT retry the same URL. Immediately try web_fetch on the next relevant URL.\n5. Smart Retry: Do not retry same things same way everytime. If web_search or web_fetch dosen't return correct result, change arguments."
+            ]
+        },
+        {
+            "name": "identity",
+            "type": "local_class",
+            "class": "imports.mcp.identity_mcp.IdentityMCP",
+            "init_params": {
+                "state_file": "./data/identity.json"
+            },
+            "tools": [],
+            "prompts": [],
+            "abilities": []
+        },
+        {
+            "name": "memory",
+            "type": "local_class",
+            "class": "imports.mcp.memory_mcp.MemoryMCP",
+            "inject_app_config": true,
+            "init_params": {},
+            "tools": [
+                {
+                    "name": "save_memory",
+                    "description": "Save a persistent fact into long-term memory.",
+                    "parameters": {
+                        "properties": {
+                            "content": {
+                                "type": "string"
+                            },
+                            "source": {
+                                "type": "string"
+                            },
+                            "type": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "content"
+                        ]
+                    }
+                },
+                {
+                    "name": "search_memory",
+                    "description": "Search long-term memory.",
+                    "parameters": {
+                        "properties": {
+                            "query": {
+                                "type": "string"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 5
+                            }
+                        },
+                        "required": [
+                            "query"
+                        ]
+                    }
+                }
+            ],
+            "prompts": [],
+            "abilities": [
+                "You have access to a long-term memory system to read historical facts and context about the user and past sessions."
+            ]
+        },
+        {
+            "name": "image_gen",
+            "type": "local_class",
+            "class": "imports.mcp.image_gen_mcp.ImageGeneratorMCP",
+            "inject_image_manager": true,
+            "init_params": {
+                "workflow_path": "./data/workflows/FLUX.2-Q.json",
+                "comfyui_url": "http://127.0.0.1:8188"
+            },
+            "tools": [
+                {
+                    "name": "generate_image",
+                    "timeout": 600,
+                    "description": "Generate an image from a text description using the local Stable Diffusion pipeline. Returns an image_hash that can be included in the response.",
+                    "parameters": {
+                        "properties": {
+                            "prompt": {
+                                "type": "string",
+                                "description": "A detailed description of the image to generate."
+                            },
+                            "negative_prompt": {
+                                "type": "string",
+                                "description": "Things to exclude from the image. Optional.",
+                                "default": "bad geometry, abnormal body parts, unnatural faces, bad fonts"
+                            },
+                            "steps": {
+                                "type": "integer",
+                                "description": "Number of inference steps, higher = better quality but slower. Optional.",
+                                "default": 5,
+                                "maximum": 15
+                            },
+                            "width": {
+                                "type": "integer",
+                                "description": "Image width in pixels. Optional.",
+                                "default": 1024
+                            },
+                            "height": {
+                                "type": "integer",
+                                "description": "Image height in pixels. Optional.",
+                                "default": 1024
+                            }
+                        },
+                        "required": [
+                            "prompt"
+                        ]
+                    }
+                }
+            ],
+            "prompts": [],
+            "abilities": [
+                "Image Generation Skills:\n1. When the user asks you to generate, create, or draw an image, use the generate_image tool.\n2. Write a detailed, descriptive prompt in English for best results. Translate the user's request into a rich visual description.\n3. Always include a negative_prompt to avoid common artifacts.\n4. Use high step value only for high detiled, complex prompts. For simple images basic value is enough."
+            ]
+        }
+    ]
+}

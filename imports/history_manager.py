@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import md5
 import os
@@ -12,12 +12,12 @@ class HistoryRecord:
     create_time: datetime
     role: str
     message: str
-    image_hash: str | None
+    image_hashes: list[str]
     def __init__(self, role: str, message: str, create_time: datetime | None = None,
-                 hash: str = "", image_hash: str | None = None) -> None:
+                 hash: str = "", image_hashes: list[str] | None = None) -> None:
         self.role = role
         self.message = message
-        self.image_hash = image_hash
+        self.image_hashes = image_hashes or []
         if create_time:
             self.create_time = create_time
         else:
@@ -33,58 +33,62 @@ class HistoryRecord:
             "create_time": self.create_time.strftime("%Y-%m-%d %H:%M:%S"),
             "role": self.role,
             "message": self.message,
-            "image_hash": self.image_hash
+            "image_hashes": self.image_hashes
         }
 
 class HistoryManager:
     def __init__(self, history_path: str = "") -> None:
-        self.history: list[HistoryRecord] = []
-        self.old_records_mark = 0
+        self.conversational_history: list[HistoryRecord] = []
+        self.task_history: list[HistoryRecord] = []
+        self.file_path: str | None = None
+        
         if history_path:
             self.file_path = history_path
             self.load_history(history_path)
         else:
-            self.file_path = None
-            print("Save path was not provided. Loaded in anonimous mode. No history will be saved.")
+            print("Save path was not provided. Loaded in anonymous mode. No history will be saved.")
 
-    def add_record(self, role: str, message: str, image_hash: str | None = None) -> None:
-        new_record = HistoryRecord(role, message.strip(), image_hash=image_hash)
+    def add_dialog_record(self, role: str, message: str, image_hashes: list[str] | None = None) -> None:
+        """Adds a record to the persistent conversational history."""
+        new_record = HistoryRecord(role, message.strip(), image_hashes=image_hashes or [])
         if DEBUG:
-            print(f"Adding record: {new_record}")
-        self.history.append(new_record)
-        self.save_history()
-    
-    def get_records(self, count: int = 0) -> list[HistoryRecord]:
-        if count == 0:
-            records_list = self.history[self.old_records_mark:]
-            return records_list
-        records_list = self.history[0 - count:]
-        return records_list
-    
-    def get_last_record(self, role: str) -> HistoryRecord | None:
-        result = None 
-        for record in self.history[-10:]:
-            if record.role == role:
-                result = record
-        return result
-    
-    def set_old_records_mark(self, offset: int = 0) -> None:
-        self.old_records_mark = len(self.history) - offset
+            print(f"Adding dialog record: {new_record}")
+        self.conversational_history.append(new_record)
         self.save_history()
 
-    def wipe_history(self) -> None:
-        self.history = []
-        self.old_records_mark = 0
-        self.save_history()
+    def add_task_record(self, role: str, message: str, image_hashes: list[str] | None = None) -> None:
+        """Adds a record to the short-lived task history."""
+        new_record = HistoryRecord(role, message.strip(), image_hashes=image_hashes or [])
+        if DEBUG:
+            print(f"Adding task record: {new_record}")
+        self.task_history.append(new_record)
+
+    def get_dialog_records(self, count: int = 0) -> list[HistoryRecord]:
+        """Returns the conversation history."""
+        if count == 0:
+            return self.conversational_history
+        return self.conversational_history[-count:]
+
+    def get_task_records(self, count: int = 0) -> list[HistoryRecord]:
+        """Returns the current task history."""
+        if count == 0:
+            return self.task_history
+        return self.task_history[-count:]
+
+    def clear_task_history(self) -> None:
+        """Wipes the task history after a task completes."""
+        self.task_history = []
+        if DEBUG:
+            print("Task history cleared.")
 
     def save_history(self) -> None:
+        """Saves only the conversational history."""
         if self.file_path:
             try:
                 records_list = []
-                for record in self.history:
+                for record in self.conversational_history:
                     records_list.append(record.to_dict())
                 history_json = {
-                    "old_records_mark": self.old_records_mark,
                     "records": records_list
                 }
                 with open(self.file_path, "w") as f:
@@ -92,21 +96,40 @@ class HistoryManager:
             except IOError as e:
                 print(f"Failed to save history. Error: {e}")
 
+    def compress_dialog_history(self, summary_text: str, keep_recent: int = 5) -> None:
+        """Replaces old history with a summary node, keeping the most recent N messages."""
+        if len(self.conversational_history) <= keep_recent:
+            return
+            
+        recent = self.conversational_history[-keep_recent:]
+        summary_record = HistoryRecord(role="model", message=f"Conversation Summary:\n{summary_text}")
+        
+        self.conversational_history = [summary_record] + recent
+        self.save_history()
+
     def load_history(self, file_path: str) -> None:
+        """Loads the conversational history. Supports both old (image_hash) and new (image_hashes) formats."""
         if file_path:
             try:
                 with open(file_path, "r") as f:
                     history_json = json.load(f)
-                    self.old_records_mark = history_json["old_records_mark"]
-                    records_list = history_json["records"]
+                    records_list = history_json.get("records", [])
                     for record in records_list:
-                        self.history.append(HistoryRecord(
+                        # Backward compat: convert old image_hash to image_hashes
+                        if "image_hashes" in record:
+                            image_hashes = record["image_hashes"]
+                        elif record.get("image_hash"):
+                            image_hashes = [record["image_hash"]]
+                        else:
+                            image_hashes = []
+                        
+                        self.conversational_history.append(HistoryRecord(
                             record["role"],
                             record["message"],
                             datetime.strptime(record["create_time"], "%Y-%m-%d %H:%M:%S"),
                             record["hash"],
-                            record.get("image_hash")
+                            image_hashes=image_hashes
                         ))
-            except IOError as e:
-                print("History file not found. Start anew.")
-                self.history = []
+            except IOError:
+                print("History file not found or invalid format. Start anew.")
+                self.conversational_history = []
