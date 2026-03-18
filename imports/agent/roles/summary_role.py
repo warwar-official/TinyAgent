@@ -42,6 +42,22 @@ class SummaryRole(AIRole):
             summary_text = parsed.get("summary", "")
             
             if summary_text:
+                old_records = records[:-5]
+                user_msg = ""
+                for rec in old_records:
+                    if rec.role == "user":
+                        user_msg = rec.message
+                    elif rec.role == "model" and user_msg:
+                        if self.engine.mcp_connector:
+                            try:
+                                self.engine.mcp_connector.execute_tool("save_archived_message", {
+                                    "user_msg": user_msg,
+                                    "model_msg": rec.message
+                                })
+                            except Exception as e:
+                                print(f"Error saving archived message: {e}")
+                        user_msg = ""
+                
                 history_manager.compress_dialog_history(summary_text, keep_recent=5)
                 
             return parsed

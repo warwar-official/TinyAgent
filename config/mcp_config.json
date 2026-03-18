@@ -199,64 +199,47 @@
                             "query"
                         ]
                     }
-                }
-            ],
-            "prompts": [],
-            "abilities": [
-                "You have access to a long-term memory system to read historical facts and context about the user and past sessions."
-            ]
-        },
-        {
-            "name": "image_gen",
-            "type": "local_class",
-            "class": "imports.mcp.image_gen_mcp.ImageGeneratorMCP",
-            "inject_image_manager": true,
-            "init_params": {
-                "workflow_path": "./data/workflows/FLUX.2-Q.json",
-                "comfyui_url": "http://127.0.0.1:8188"
-            },
-            "tools": [
+                },
                 {
-                    "name": "generate_image",
-                    "timeout": 600,
-                    "description": "Generate an image from a text description using the local Stable Diffusion pipeline. Returns an image_hash that can be included in the response.",
+                    "name": "save_archived_message",
+                    "description": "Save an archived message pair.",
                     "parameters": {
                         "properties": {
-                            "prompt": {
-                                "type": "string",
-                                "description": "A detailed description of the image to generate."
+                            "user_msg": {
+                                "type": "string"
                             },
-                            "negative_prompt": {
-                                "type": "string",
-                                "description": "Things to exclude from the image. Optional.",
-                                "default": "bad geometry, abnormal body parts, unnatural faces, bad fonts"
-                            },
-                            "steps": {
-                                "type": "integer",
-                                "description": "Number of inference steps, higher = better quality but slower. Optional.",
-                                "default": 5,
-                                "maximum": 15
-                            },
-                            "width": {
-                                "type": "integer",
-                                "description": "Image width in pixels. Optional.",
-                                "default": 1024
-                            },
-                            "height": {
-                                "type": "integer",
-                                "description": "Image height in pixels. Optional.",
-                                "default": 1024
+                            "model_msg": {
+                                "type": "string"
                             }
                         },
                         "required": [
-                            "prompt"
+                            "user_msg",
+                            "model_msg"
+                        ]
+                    }
+                },
+                {
+                    "name": "search_archived_messages",
+                    "description": "Search messages in previous conversations.",
+                    "parameters": {
+                        "properties": {
+                            "query": {
+                                "type": "string"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 2
+                            }
+                        },
+                        "required": [
+                            "query"
                         ]
                     }
                 }
             ],
             "prompts": [],
             "abilities": [
-                "Image Generation Skills:\n1. When the user asks you to generate, create, or draw an image, use the generate_image tool.\n2. Write a detailed, descriptive prompt in English for best results. Translate the user's request into a rich visual description.\n3. Always include a negative_prompt to avoid common artifacts.\n4. Use high step value only for high detiled, complex prompts. For simple images basic value is enough."
+                "You have access to a long-term memory system to read historical facts and context about the user and past sessions."
             ]
         }
     ]

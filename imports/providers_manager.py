@@ -151,7 +151,7 @@ class ProvidersManager:
         if model.provider not in self.providers_dict:
             raise ValueError(f"Provider '{model.provider}' not found.")
         
-        with open("payloads_log.json", "a") as f:
+        with open("logs/payloads_log.json", "a") as f:
             payload_list = []
             for record in payload:
                 payload_list.append({"role": record.role, "message": record.message, "image_hashes": record.image_hashes})

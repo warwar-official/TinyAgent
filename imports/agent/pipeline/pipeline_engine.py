@@ -49,7 +49,7 @@ class PipelineEngine:
             "input_payload": payload,
             "output": output
         }
-        with open("role_payload.json", "a") as f:
+        with open("logs/role_payload.json", "a") as f:
             json.dump(log_entry, f, ensure_ascii=False, cls=HistoryEncoder)
             f.write("\n")
 
@@ -93,6 +93,24 @@ class PipelineEngine:
         memories_text = json.dumps(memories, ensure_ascii=False)
         print(f"[DEBUG] memory_payload_size: {len(memories_text)} characters")
         
+        # ====== ARCHIVED CONTEXT ======
+        archived_context = ""
+        if self.mcp_connector:
+            try:
+                res = self.mcp_connector.execute_tool("search_archived_messages", {"query": user_input, "limit": 2})
+                if isinstance(res, dict) and "results" in res:
+                    archived_pairs = res["results"]
+                    if archived_pairs:
+                        archived_context = "Recent relevant past interactions:\n"
+                        for i, pair in enumerate(archived_pairs, 1):
+                            archived_context += f"{i}. user: {pair.get('user', '')}\n   model: {pair.get('model', '')}\n\n"
+            except Exception as e:
+                print(f"[DEBUG] Error fetching archived context: {e}")
+
+        user_input_with_context = user_input
+        if archived_context:
+            user_input_with_context += f"\n\n{archived_context}"
+
         # Gather shared resources
         history_records = history_manager.get_dialog_records() #count=5)
         identity = self.mcp_connector.get_identity_prompt() if self.mcp_connector else ""
@@ -104,7 +122,7 @@ class PipelineEngine:
             send_status("Routing request...")
         
         router_payload = {
-            "input": user_input,
+            "input": user_input_with_context,
             "history": history_records,
             "identity": identity,
             "memory": memories,
@@ -124,6 +142,7 @@ class PipelineEngine:
             
             # Formatter in conversation mode: input, history, memory, identity, input_images
             formatter_payload = {
+                "input": user_input_with_context,
                 "raw_answer": raw_answer,
                 "task_summary": task_summary,
                 "history": history_records,
@@ -342,6 +361,7 @@ class PipelineEngine:
             send_status("Formatting response...")
         
         formatter_payload = {
+            "input": user_input_with_context,
             "raw_answer": raw_answer,
             "task_summary": task_summary,
             "history": history_records,

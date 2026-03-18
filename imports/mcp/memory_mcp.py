@@ -22,7 +22,8 @@ class MemoryMCP(MCPServer):
             memory_text = args.get("content", "")
             source = args.get("source", "autonomous")
             memory_type = args.get("type", "fact")
-            self.memory_rag.add_memory(memory_text, source=source, memory_type=memory_type)
+            context = args.get("context", "")
+            self.memory_rag.add_memory(memory_text, source=source, memory_type=memory_type, context=context)
             return {"status": "success", "message": "Memory saved"}
         elif tool_name == "search_memory":
             query = args.get("query", "")
@@ -40,5 +41,15 @@ class MemoryMCP(MCPServer):
             return {"results": truncated_results}
         elif tool_name == "delete_memory":
             return {"status": "error", "message": "Not implemented"}
+        elif tool_name == "save_archived_message":
+            user_msg = args.get("user_msg", "")
+            model_msg = args.get("model_msg", "")
+            self.memory_rag.add_archived_message(user_msg, model_msg)
+            return {"status": "success", "message": "Archived message saved"}
+        elif tool_name == "search_archived_messages":
+            query = args.get("query", "")
+            limit = min(args.get("limit", 2), 5)
+            results = self.memory_rag.search_archived_messages(query, limit=limit)
+            return {"results": results}
         else:
             raise ValueError(f"MemoryMCP: Unknown tool {tool_name}")

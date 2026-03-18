@@ -19,7 +19,7 @@ from imports.agent.pipeline.pipeline_engine import PipelineEngine
 from imports.providers_manager import ProvidersManager, Model
 from imports.mcp.connector import MCPConnector
 
-CONFIG_PATH = "config.json"
+CONFIG_PATH = "config/config.json"
 USE_TELEGRAM_FRONTEND = True
 
 def load_config(path: str) -> dict | None:

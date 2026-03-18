@@ -19,6 +19,7 @@ Output EXACTLY and ONLY the final merged sentence. Do not add any conversational
 """
 
 COLLECTION_NAME = "memories"
+ARCHIVED_COLLECTION_NAME = "archived_messages"
 IDENTICAL_THRESHOLD = 0.97  # cosine: 1.0 = identical
 SIMILAR_THRESHOLD = 0.85    # cosine: high overlap warrants merging
 
@@ -116,7 +117,16 @@ class MemoryRAG:
         for point in results:
             payload = point.payload or {}
             new_access = int(payload.get("total_access", 0)) + 1
-            texts.append(str(payload.get("text", "")))
+            
+            content = payload.get("text", "")
+            mem_type = payload.get("type", "fact")
+            context = payload.get("context", "")
+            
+            formatted = f"[{mem_type}] {content}"
+            if context:
+                formatted += f" (Context: {context})"
+                
+            texts.append(formatted)
             updates.append((point.id, new_access))
 
         # Batch-update access stats
@@ -129,13 +139,14 @@ class MemoryRAG:
 
         return texts
 
-    def add_memory(self, memory: str, source: str = "", memory_type: str = "") -> None:
+    def add_memory(self, memory: str, source: str = "", memory_type: str = "", context: str = "") -> None:
         """Add a new memory. Skips near-identical, merges similar, or inserts new.
 
         Args:
             memory: The text content of the memory.
             source: Origin of the memory (e.g. "conversation", "autonomous").
-            memory_type: Category of the memory (e.g. "fact", "preference").
+            memory_type: Category of the memory (e.g. "fact", "result", "error").
+            context: Situational background.
         """
         vector = list(self.embedding_model.embed([memory]))[0].tolist()
 
@@ -191,6 +202,7 @@ class MemoryRAG:
             "time_created": time.time(),
             "source": source,
             "type": memory_type,
+            "context": context,
             "total_access": 0,
             "last_access": 0,
         }
@@ -228,11 +240,12 @@ class MemoryRAG:
     def _ensure_collection(self) -> None:
         """Create the collection if it doesn't exist."""
         collections = [c.name for c in self.client.get_collections().collections]
+        
+        # Get vector size from the embedding model
+        sample_vec = list(self.embedding_model.embed(["test"]))[0]
+        vector_size = len(sample_vec)
+            
         if COLLECTION_NAME not in collections:
-            # Get vector size from the embedding model
-            sample_vec = list(self.embedding_model.embed(["test"]))[0]
-            vector_size = len(sample_vec)
-
             self.client.create_collection(
                 collection_name=COLLECTION_NAME,
                 vectors_config=models.VectorParams(
@@ -240,6 +253,39 @@ class MemoryRAG:
                     distance=models.Distance.COSINE,
                 ),
             )
+            
+        if ARCHIVED_COLLECTION_NAME not in collections:
+            self.client.create_collection(
+                collection_name=ARCHIVED_COLLECTION_NAME,
+                vectors_config=models.VectorParams(
+                    size=vector_size,
+                    distance=models.Distance.COSINE,
+                ),
+            )
+
+    def add_archived_message(self, user_msg: str, model_msg: str) -> None:
+        text = f"User: {user_msg}\nModel: {model_msg}"
+        vector = list(self.embedding_model.embed([text]))[0].tolist()
+        point_id = str(uuid.uuid4())
+        payload = {
+            "user": user_msg,
+            "model": model_msg,
+            "time_created": time.time()
+        }
+        self.client.upsert(
+            collection_name=ARCHIVED_COLLECTION_NAME,
+            points=[models.PointStruct(id=point_id, vector=vector, payload=payload)]
+        )
+
+    def search_archived_messages(self, query: str, limit: int = 2) -> list[dict]:
+        query_vector = list(self.embedding_model.embed([query]))[0].tolist()
+        results = self.client.query_points(
+            collection_name=ARCHIVED_COLLECTION_NAME,
+            query=query_vector,
+            limit=limit,
+        ).points
+        
+        return [p.payload for p in results if p.payload]
 
     @staticmethod
     def _build_filter(filters: dict) -> models.Filter:

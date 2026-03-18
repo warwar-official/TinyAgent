@@ -42,15 +42,20 @@ class MemoryCreationRole(AIRole):
         finally:
             self.engine.model = original_model
         
-        if parsed.get("create_memory") and parsed.get("memory", {}).get("importance", 0) >= 0.5:
+        if parsed.get("create_memory") and parsed.get("memory"):
             if self.engine.mcp_connector:
-                content = parsed["memory"].get("content", "")
+                mem_data = parsed["memory"]
+                content = mem_data.get("content", "")
+                mem_type = mem_data.get("type", "fact")
+                context = mem_data.get("context", "")
+                
                 if content:
                     try:
                         self.engine.mcp_connector.execute_tool("save_memory", {
                             "content": content,
+                            "context": context,
                             "source": "conversation",
-                            "type": "fact"
+                            "type": mem_type
                         })
                     except Exception as e:
                         parsed["notes"] = f"Failed to save memory: {e}"
