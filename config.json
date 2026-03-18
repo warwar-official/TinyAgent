@@ -19,7 +19,7 @@
             "vision_enabled": true
         },
         "summary_model": {
-            "model_id": "gemma-3-4b-it",
+            "model_id": "gemma-3-27b-it",
             "provider": "gemini",
             "api_key_name": "GEMINI_API_KEY",
             "vision_enabled": true

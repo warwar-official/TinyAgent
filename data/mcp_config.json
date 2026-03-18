@@ -87,7 +87,7 @@
             "init_params": {},
             "tools": [
                 {
-                    "name": "current_weather",
+                    "name": "fetch_weather",
                     "description": "Gets the current weather and forecast for a specific city. Use this when the user asks about weather conditions.",
                     "parameters": {
                         "properties": {
@@ -141,7 +141,7 @@
             ],
             "prompts": [],
             "abilities": [
-                "Web Browsing Skills:\n1. Make a meainigful search query.\n2. Assess Snippets First: After using web_search, read the provided snippets. If they contain the complete answer to the user's query, STOP and provide the answer.\n3. Deep Dive: If the snippets are insufficient, use web_fetch on the most promising URL from the search results to read the full content.\n4. Handling Scraper Blocks: If web_fetch returns an empty result, an error, or asks for CAPTCHA, it means the site is blocking automated access. DO NOT retry the same URL. Immediately try web_fetch on the next relevant URL.\n5. Smart Retry: Do not retry same things same way everytime. If web_search or web_fetch dosen't return correct result, change arguments."
+                "Weather Skills:\n1. Use fetch_weather to get current weather in given location.\n2. fetch_weather tool return only current weather in given location, to get information to another date use web searching approach.\n\nWeb Browsing Skills:\n1. Make a meainigful search query.\n2. Assess Snippets First: After using web_search, read the provided snippets. If they contain the complete answer to the user's query, STOP and provide the answer.\n3. Deep Dive: If the snippets are insufficient, use web_fetch on the most promising URL from the search results to read the full content.\n4. Handling Scraper Blocks: If web_fetch returns an empty result, an error, or asks for CAPTCHA, it means the site is blocking automated access. DO NOT retry the same URL. Immediately try web_fetch on the next relevant URL.\n5. Smart Retry: Do not retry same things same way everytime. If web_search or web_fetch dosen't return correct result, change arguments."
             ]
         },
         {

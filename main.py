@@ -21,7 +21,6 @@ from imports.mcp.connector import MCPConnector
 
 CONFIG_PATH = "config.json"
 USE_TELEGRAM_FRONTEND = True
-AUTONOMOUS_LOOP_INTERVAL = 0
 
 def load_config(path: str) -> dict | None:
     try:
@@ -45,17 +44,6 @@ def console_input_loop(bus: MessageBus) -> None:
             action="message",
             text=user_input
         ))
-
-def autonomous_loop(bus: MessageBus) -> None:
-    if AUTONOMOUS_LOOP_INTERVAL > 0:
-        while True:
-            bus.send_to_backend(AgentRequest(
-                frontend_type="console",
-                chat_id="console",
-                action="own_task",
-                text=""
-            ))
-            time.sleep(AUTONOMOUS_LOOP_INTERVAL)
 
 def main():
     config = load_config(CONFIG_PATH)
@@ -123,9 +111,6 @@ def main():
     else:
         front_end_thread = Thread(target=console_input_loop, args=(bus,), daemon=True)
         front_end_thread.start()
-
-    autonomous_thread = Thread(target=autonomous_loop, args=(bus,), daemon=True)
-    autonomous_thread.start()
 
     # Wait indefinitely until interrupted
     try:

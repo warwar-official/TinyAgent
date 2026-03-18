@@ -32,10 +32,10 @@ class MemoryMCP(MCPServer):
             # Formulate results with max 300 chars per result
             truncated_results = []
             for res in results:
-                content = res.get("content", "")
+                content = str(res)
                 if len(content) > 300:
                     content = content[:297] + "..."
-                truncated_results.append({"content": content, "source": res.get("source"), "type": res.get("type")})
+                truncated_results.append(content)
             
             return {"results": truncated_results}
         elif tool_name == "delete_memory":

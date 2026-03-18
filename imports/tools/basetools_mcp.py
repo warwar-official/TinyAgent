@@ -61,8 +61,8 @@ class BaseToolsMCP(MCPServer):
         arguments: dict = params.get("arguments", {})
 
         try:
-            if name == "current_weather":
-                return self.current_weather(**arguments)
+            if name == "fetch_weather":
+                return self.fetch_weather(**arguments)
             elif name == "web_search":
                 return self.web_search(**arguments)
             elif name == "web_fetch":
@@ -84,8 +84,8 @@ class BaseToolsMCP(MCPServer):
                 "error": str(e),
             }
 
-    def current_weather(self, location: str) -> dict:
-        tool_answer = {"tool_name": "current_weather", "tool_arguments": {"location": location}, "tool_result": None, "truncate": False, "error": None}
+    def fetch_weather(self, location: str) -> dict:
+        tool_answer = {"tool_name": "fetch_weather", "tool_arguments": {"location": location}, "tool_result": None, "truncate": False, "error": None}
         headers = {"User-Agent": "TinyAgent"}
         location_url = location.replace(" ", "+")
         response = requests.request("GET", f"https://nominatim.openstreetmap.org/search?q={location_url}&format=json", headers=headers)
@@ -119,7 +119,7 @@ class BaseToolsMCP(MCPServer):
                 "truncate": False, 
                 "error": "BRAVE_API_KEY not found in environment variables"
             }
-
+        query = query.replace("\"", "").replace("\\"," ").replace("'", " ")
         tool_answer = {"tool_name": "web_search", "tool_arguments": {"query": query, "count": count}, "tool_result": None, "truncate": False, "error": None}
         
         if count > 5:

@@ -2,6 +2,7 @@ from imports.providers_manager import ProvidersManager, Model
 from imports.history_manager import HistoryRecord
 from qdrant_client import QdrantClient, models
 from fastembed import TextEmbedding
+from fastembed.common.model_description import PoolingType, ModelSource
 import json
 import time
 import os
@@ -38,9 +39,37 @@ class MemoryRAG:
         os.makedirs(db_path, exist_ok=True)
         os.makedirs(models_cache_path, exist_ok=True)
 
-        # Initialize fastembed with cache in the app folder
+        # Initialize fastembed with custom model configuration (mean pooling, fp32)
+        custom_model_name = f"{emb_model_name}-custom"
+        
+        try:
+            # Find the model in fastembed's list to preserve the correct sources, dim, and additional_files
+            supported = next((m for m in TextEmbedding.list_supported_models() if m["model"] == emb_model_name), None)
+            if supported:
+                TextEmbedding.add_custom_model(
+                    model=custom_model_name,
+                    pooling=PoolingType.MEAN,
+                    normalization=True,
+                    sources=ModelSource(**supported["sources"]),
+                    dim=supported["dim"],
+                    model_file="model.onnx",
+                    additional_files=supported.get("additional_files")
+                )
+            else:
+                # Fallback
+                TextEmbedding.add_custom_model(
+                    model=custom_model_name,
+                    pooling=PoolingType.MEAN,
+                    normalization=True,
+                    sources=ModelSource(hf=emb_model_name),
+                    dim=1024,
+                    model_file="model.onnx"
+                )
+        except ValueError:
+            pass # Already registered
+
         self.embedding_model = TextEmbedding(
-            model_name=emb_model_name,
+            model_name=custom_model_name,
             cache_dir=models_cache_path
         )
 
@@ -52,7 +81,7 @@ class MemoryRAG:
         self,
         query: str,
         limit: int = 5,
-        similarity_threshold: float = 0.75,
+        similarity_threshold: float = 0.8,
         filters: dict | None = None
     ) -> list[str]:
         """Search memories by semantic similarity with optional metadata filters.

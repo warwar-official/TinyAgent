@@ -9,13 +9,13 @@ class VerifierRole(AIRole):
 
     def run(self, payload: dict) -> dict:
         """
-        Verifier role: verifies a single step result.
+        Verifier role: evaluates a single step result.
         
         Payload: {"task": dict, "worker_output": dict, "answer": dict, "images": list[str]}
         
         Verifier does NOT see: history, identity, memory.
         
-        Returns: {"result": {"approved": bool, "is_critical": bool}, "notes": str}
+        Returns: {"result": {"resolution": "success"|"failure"|"interrupt"}, "notes": str}
         """
         SYSTEM_PROMPT = self.engine.mcp_connector.generate_prompt("verifier_role_prompt", {}) if self.engine.mcp_connector else ""
         current_step = payload.get("task", {})
@@ -24,7 +24,7 @@ class VerifierRole(AIRole):
         images = payload.get("images", [])
         
         if not current_step:
-            return {"notes": "No current step to verify.", "result": {"approved": True, "is_critical": False}}
+            return {"notes": "No current step to verify.", "result": {"resolution": "success"}}
             
         user_prompt = f"Step description: {json.dumps(current_step, ensure_ascii=False)}\n"
         
@@ -32,7 +32,7 @@ class VerifierRole(AIRole):
             user_prompt += f"Worker Output: {json.dumps(worker_output, ensure_ascii=False)}\n"
             status = worker_output.get("status", "success")
             if status == "interrupt":
-                user_prompt += "The worker interrupted this task because it is unexecutable. Please determine if this task is critical to the overall goal. If it is non-critical, approve it with notes to skip. If it is critical, do NOT approve it and set 'is_critical' to true in your JSON result.\n"
+                user_prompt += "The worker interrupted this task because it is unexecutable. Evaluate if this is a valid reason for interruption.\n"
         
         if answer:
             user_prompt += f"Execution Results to verify: {json.dumps(answer, ensure_ascii=False)}\n"
