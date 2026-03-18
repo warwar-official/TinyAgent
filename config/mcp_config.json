@@ -4,9 +4,8 @@
             "name": "prompt_builder",
             "type": "local_class",
             "class": "imports.tools.prompt_builder_mcp.PromptBuilderMCP",
-            "init_params": {
-                "prompts_path": "./data/prompts.json"
-            },
+            "init_params": {},
+            "inject_app_config": true,
             "tools": [],
             "prompts": [
                 {

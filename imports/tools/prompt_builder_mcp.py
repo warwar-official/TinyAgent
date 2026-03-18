@@ -5,7 +5,8 @@ import json
 class PromptBuilderMCP(MCPServer):
     """MCP server that generates all system prompts."""
 
-    def __init__(self, prompts_path: str) -> None:
+    def __init__(self, app_config: dict = None) -> None:
+        prompts_path = app_config["context"]["prompts_path"]
         self._prompts = self._load_prompts(prompts_path)
 
     @staticmethod
