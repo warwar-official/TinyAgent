@@ -15,6 +15,7 @@ from imports.agent.roles.formatter_role import PersonalityFormatterRole
 from imports.agent.roles.memory_retrieval_role import MemoryRetrievalRole
 from imports.agent.roles.memory_creation_role import MemoryCreationRole
 from imports.agent.roles.summary_role import SummaryRole
+from imports.agent.roles.history_compressor_role import HistoryCompressorRole
 
 class PipelineEngine:
     def __init__(self, providers_manager: ProvidersManager, model: Model, config: dict, image_manager=None, mcp_connector=None):
@@ -34,6 +35,35 @@ class PipelineEngine:
         self.memory_retrieval = MemoryRetrievalRole(self)
         self.memory_creation = MemoryCreationRole(self)
         self.summary = SummaryRole(self)
+        self.history_compressor = HistoryCompressorRole(self)
+
+    def _clean_payload(self, data, skip=False):
+        """Recursively removes empty strings, lists, and dicts, except in specific nested keys."""
+        if skip:
+            return data
+        if isinstance(data, dict):
+            cleaned = {}
+            for k, v in data.items():
+                if k in ["tools", "abilities", "arguments", "result", "next_task", "current_task"]:
+                    # Preserve structure for specific keys that may legitimately be empty
+                    val = self._clean_payload(v, skip=True)
+                else:
+                    val = self._clean_payload(v)
+                
+                # Filter out exactly empty structures (but keep boolean False or 0)
+                if val in ["", [], {}]:
+                    continue
+                cleaned[k] = val
+            return cleaned
+        elif isinstance(data, list):
+            cleaned_list = []
+            for item in data:
+                val = self._clean_payload(item)
+                if val not in ["", [], {}]:
+                    cleaned_list.append(val)
+            return cleaned_list
+        else:
+            return data
 
     def log_step(self, role_name: str, payload: dict, output: dict):
         """Log inputs and outputs of each role for debugging reasoning."""
@@ -84,7 +114,7 @@ class PipelineEngine:
         if send_status:
             send_status("Retrieving memories...")
         
-        retriever_payload = {"input": user_input}
+        retriever_payload = self._clean_payload({"input": user_input})
         mem_out = self.memory_retrieval.run(retriever_payload)
         self.log_step("MemoryRetrieval", retriever_payload, mem_out)
         memories = mem_out.get("result", {}).get("memories", [])
@@ -121,13 +151,13 @@ class PipelineEngine:
         if send_status:
             send_status("Routing request...")
         
-        router_payload = {
+        router_payload = self._clean_payload({
             "input": user_input_with_context,
             "history": history_records,
             "identity": identity,
             "memory": memories,
             "input_images": input_images,
-        }
+        })
         router_out = self.router.run(router_payload)
         self.log_step("Router", router_payload, router_out)
         
@@ -141,7 +171,7 @@ class PipelineEngine:
                 send_status("Generating response...")
             
             # Formatter in conversation mode: input, history, memory, identity, input_images
-            formatter_payload = {
+            formatter_payload = self._clean_payload({
                 "input": user_input_with_context,
                 "raw_answer": raw_answer,
                 "task_summary": task_summary,
@@ -151,7 +181,7 @@ class PipelineEngine:
                 "language": language,
                 "input_images": input_images,
                 "media": [],
-            }
+            })
             formatter_out = self.formatter.run(formatter_payload)
             self.log_step("Formatter", formatter_payload, formatter_out)
             
@@ -160,7 +190,7 @@ class PipelineEngine:
         
         # ── TASK PATH ───────────────────────────────────────────────────
         
-        MAX_ITERATIONS = 30
+        MAX_ITERATIONS = 90
         abilities = self.mcp_connector.get_all_abilities() if self.mcp_connector else []
         tools = self.mcp_connector.get_available_tools() if self.mcp_connector else []
         tasks_history = []
@@ -174,7 +204,7 @@ class PipelineEngine:
             if len(history_manager.get_dialog_records()) >= 20:
                 if send_status:
                     send_status("Summarizing long conversation...")
-                summary_payload = {"history": history_manager.get_dialog_records()}
+                summary_payload = self._clean_payload({"history": history_manager.get_dialog_records()})
                 sum_out = self.summary.run(summary_payload, history_manager=history_manager)
                 self.log_step("Summary", summary_payload, sum_out)
             
@@ -182,12 +212,12 @@ class PipelineEngine:
             if send_status:
                 send_status("Planning next step...")
             
-            deconstructor_payload = {
+            deconstructor_payload = self._clean_payload({
                 "task_summary": task_summary,
                 "abilities": abilities,
                 "tasks_history": tasks_history,
                 "media": collected_images,
-            }
+            })
             deconstructor_out = self.deconstructor.run(deconstructor_payload)
             self.log_step("Deconstructor", deconstructor_payload, deconstructor_out)
             
@@ -229,13 +259,13 @@ class PipelineEngine:
                 if send_status:
                     send_status(f"Executing step {step_counter}: {current_task.get('description', 'Unknown')}")
                 
-                worker_payload = {
+                worker_payload = self._clean_payload({
                     "current_task": current_task,
                     "tasks_history": tasks_history,
                     "tools": tools,
                     "abilities": abilities,
                     "verification_feedback": verification_feedback,
-                }
+                })
                 worker_out = self.worker.run(worker_payload)
                 self.log_step("Worker", worker_payload, worker_out)
                 
@@ -283,17 +313,43 @@ class PipelineEngine:
                         "action": "interrupt",
                         "result": worker_ans.get("answer", "task_unexecutable"),
                     }
+                    
+                elif action == "delete_history_entry":
+                    entry_ids = worker_ans.get("entry_ids", [])
+                    tasks_history = [t for t in tasks_history if t["id"] not in entry_ids]
+                    step_result_data = {
+                        "action": "delete_history_entry",
+                        "result": f"Deleted entries {entry_ids}"
+                    }
+                    
+                elif action == "compress_history_entry":
+                    entry_ids = worker_ans.get("entry_ids", [])
+                    instruction = worker_ans.get("instruction", "")
+                    for eid in entry_ids:
+                        target_entry = next((t for t in tasks_history if t["id"] == eid), None)
+                        if target_entry:
+                            comp_payload = self._clean_payload({"entry": target_entry, "instruction": instruction})
+                            comp_out = self.history_compressor.run(comp_payload)
+                            compressed_txt = comp_out.get("result", {}).get("compressed_text", "")
+                            if compressed_txt:
+                                target_entry["result"] = {"compressed": compressed_txt}
+                                if "compressed" not in target_entry.get("resolution", ""):
+                                    target_entry["resolution"] = target_entry.get("resolution", "") + " (compressed)"
+                    step_result_data = {
+                        "action": "compress_history_entry",
+                        "result": f"Compressed entries {entry_ids}"
+                    }
                 
                 # ── 5. Verifier ─────────────────────────────────────────
                 if send_status:
                     send_status("Verifying step result...")
                 
-                verifier_payload = {
+                verifier_payload = self._clean_payload({
                     "task": current_task,
                     "worker_output": worker_ans,
                     "answer": step_result_data,
                     "images": step_images,
-                }
+                })
                 verifier_out = self.verifier.run(verifier_payload)
                 self.log_step("Verifier", verifier_payload, verifier_out)
                 
@@ -343,12 +399,12 @@ class PipelineEngine:
         if send_status:
             send_status("Aggregating results...")
         
-        aggregator_payload = {
+        aggregator_payload = self._clean_payload({
             "task_summary": task_summary,
             "tasks_history": tasks_history,
             "input_images": input_images,
             "media": collected_images,
-        }
+        })
         aggregator_out = self.aggregator.run(aggregator_payload)
         self.log_step("Aggregator", aggregator_payload, aggregator_out)
         
@@ -360,7 +416,7 @@ class PipelineEngine:
         if send_status:
             send_status("Formatting response...")
         
-        formatter_payload = {
+        formatter_payload = self._clean_payload({
             "input": user_input_with_context,
             "raw_answer": raw_answer,
             "task_summary": task_summary,
@@ -370,7 +426,7 @@ class PipelineEngine:
             "language": language,
             "input_images": input_images,
             "media": all_images,
-        }
+        })
         formatter_out = self.formatter.run(formatter_payload)
         self.log_step("Formatter", formatter_payload, formatter_out)
         

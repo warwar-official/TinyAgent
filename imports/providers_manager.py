@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import re
 import urllib.request
 import urllib.error
 import os
@@ -198,11 +199,16 @@ class ProvidersManager:
         
         if structure == "google-compatible":
             try:
-                return response_data["candidates"][0]["content"]["parts"][0]["text"]
+                raw_text = response_data["candidates"][0]["content"]["parts"][0]["text"]
             except KeyError:
                 print(response_data)
                 raise RuntimeError("Google API returned unexpected response format.")
         elif structure == "openai-compatible":
-            return response_data["choices"][0]["message"]["content"]
+            raw_text = response_data["choices"][0]["message"]["content"]
         else:
             raise ValueError(f"Unknown structure: {structure}")
+            
+        # Strip <think>...</think> block anywhere in the output
+        cleaned_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL)
+        # Also clean up any leading/trailing whitespace left by the removal
+        return cleaned_text.strip()

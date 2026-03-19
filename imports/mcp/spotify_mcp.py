@@ -204,12 +204,7 @@ class SpotifyMCP(MCPServer):
             return res
             
         elif name == "create_playlist":
-            user_res = self._make_request("GET", "/me")
-            if user_res.get("status") != "success":
-                return user_res
-            user_id = user_res["data"].get("id")
-            
-            return self._make_request("POST", f"/users/{user_id}/playlists", json_data={
+            return self._make_request("POST", "/me/playlists", json_data={
                 "name": args.get("name"),
                 "description": args.get("description", ""),
                 "public": args.get("public", True)
@@ -217,13 +212,29 @@ class SpotifyMCP(MCPServer):
             
         elif name == "add_to_playlist":
             playlist_id = args.get("playlist_id")
-            track_uri = args.get("track_uri")
-            return self._make_request("POST", f"/playlists/{playlist_id}/tracks", json_data={"uris": [track_uri]})
+            # Accept both a single track_uri (string) and track_uris (list)
+            track_uris = args.get("track_uris") or args.get("uris")
+            if not track_uris:
+                single = args.get("track_uri")
+                track_uris = [single] if single else []
+            if not isinstance(track_uris, list):
+                track_uris = [track_uris]
+            if not track_uris:
+                return {"status": "error", "message": "No track URIs provided."}
+            # Spotify allows up to 100 URIs per request
+            results = []
+            for i in range(0, len(track_uris), 100):
+                chunk = track_uris[i:i + 100]
+                res = self._make_request("POST", f"/playlists/{playlist_id}/items", json_data={"uris": chunk})
+                results.append(res)
+                if res.get("status") != "success":
+                    return res
+            return {"status": "success", "message": f"Added {len(track_uris)} track(s) to playlist."}
             
         elif name == "remove_from_playlist":
             playlist_id = args.get("playlist_id")
             track_uri = args.get("track_uri")
-            return self._make_request("DELETE", f"/playlists/{playlist_id}/tracks", json_data={"tracks": [{"uri": track_uri}]})
+            return self._make_request("DELETE", f"/playlists/{playlist_id}/items", json_data={"tracks": [{"uri": track_uri}]})
             
         elif name == "get_playlist":
             playlist_id = args.get("playlist_id")

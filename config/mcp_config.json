@@ -343,7 +343,7 @@
                 },
                 {
                     "name": "create_playlist",
-                    "description": "Create a new Spotify playlist.",
+                    "description": "Create a new Spotify playlist for the current user.",
                     "parameters": {
                         "properties": {
                             "name": {
@@ -364,20 +364,26 @@
                 },
                 {
                     "name": "add_to_playlist",
-                    "description": "Add a track to a Spotify playlist.",
+                    "description": "Add one or multiple tracks to a Spotify playlist. Prefer passing all URIs at once using track_uris for efficiency.",
                     "parameters": {
                         "properties": {
                             "playlist_id": {
                                 "type": "string"
                             },
+                            "track_uris": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "List of track URIs to add, e.g. [\"spotify:track:...\", ...]. Preferred over track_uri for bulk adding."
+                            },
                             "track_uri": {
                                 "type": "string",
-                                "description": "e.g., spotify:track:..."
+                                "description": "Single track URI, e.g. spotify:track:... (use track_uris for multiple)"
                             }
                         },
                         "required": [
-                            "playlist_id",
-                            "track_uri"
+                            "playlist_id"
                         ]
                     }
                 },
