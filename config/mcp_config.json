@@ -240,6 +240,230 @@
             "abilities": [
                 "You have access to a long-term memory system to read historical facts and context about the user and past sessions."
             ]
+        },
+        {
+            "name": "spotify",
+            "type": "local_class",
+            "class": "imports.mcp.spotify_mcp.SpotifyMCP",
+            "init_params": {
+                "secrets_path": "./data/spotify_secrets.json"
+            },
+            "tools": [
+                {
+                    "name": "playback_control",
+                    "description": "Control music Spotify playback. action='play' with a track_uri will play a specific track.",
+                    "parameters": {
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": [
+                                    "play",
+                                    "pause",
+                                    "next",
+                                    "previous"
+                                ]
+                            },
+                            "uris": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "e.g., [\"spotify:track:...\"] (optional, used only with play action as priority)"
+                            },
+                            "context_uri": {
+                                "type": "string",
+                                "description": "e.g., spotify:album:... | spotify:playlist:... | spotify:artist:... (optional, used only with play action if uris is missing)"
+                            },
+                            "offset": {
+                                "type": "object",
+                                "properties": {
+                                    "position": {
+                                        "type": "integer"
+                                    }
+                                },
+                                "description": "Start playback at specific offset (optional)"
+                            }
+                        },
+                        "required": [
+                            "action"
+                        ]
+                    }
+                },
+                {
+                    "name": "playback_mode",
+                    "description": "Set repeat or shuffle Spotify playback modes.",
+                    "parameters": {
+                        "properties": {
+                            "repeat": {
+                                "type": "string",
+                                "enum": [
+                                    "off",
+                                    "track",
+                                    "context"
+                                ]
+                            },
+                            "shuffle": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "spotify_search",
+                    "description": "Search for tracks, albums, artists, or playlists in Spotify.",
+                    "parameters": {
+                        "properties": {
+                            "query": {
+                                "type": "string"
+                            },
+                            "type": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": [
+                                        "track",
+                                        "album",
+                                        "artist",
+                                        "playlist"
+                                    ]
+                                },
+                                "default": [
+                                    "track"
+                                ]
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 5
+                            }
+                        },
+                        "required": [
+                            "query"
+                        ]
+                    }
+                },
+                {
+                    "name": "create_playlist",
+                    "description": "Create a new Spotify playlist.",
+                    "parameters": {
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "description": {
+                                "type": "string"
+                            },
+                            "public": {
+                                "type": "boolean",
+                                "default": true
+                            }
+                        },
+                        "required": [
+                            "name"
+                        ]
+                    }
+                },
+                {
+                    "name": "add_to_playlist",
+                    "description": "Add a track to a Spotify playlist.",
+                    "parameters": {
+                        "properties": {
+                            "playlist_id": {
+                                "type": "string"
+                            },
+                            "track_uri": {
+                                "type": "string",
+                                "description": "e.g., spotify:track:..."
+                            }
+                        },
+                        "required": [
+                            "playlist_id",
+                            "track_uri"
+                        ]
+                    }
+                },
+                {
+                    "name": "remove_from_playlist",
+                    "description": "Remove a track from a Spotify playlist.",
+                    "parameters": {
+                        "properties": {
+                            "playlist_id": {
+                                "type": "string"
+                            },
+                            "track_uri": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "playlist_id",
+                            "track_uri"
+                        ]
+                    }
+                },
+                {
+                    "name": "get_playlist",
+                    "description": "Get track details from a Spotify playlist.",
+                    "parameters": {
+                        "properties": {
+                            "playlist_id": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "playlist_id"
+                        ]
+                    }
+                },
+                {
+                    "name": "get_playback_state",
+                    "description": "Get current Spotify active device, playing track, play/pause state.",
+                    "parameters": {
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "get_playback_device",
+                    "description": "List available Spotify playback devices.",
+                    "parameters": {
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "set_playback_device",
+                    "description": "Transfer Spotify playback to a specific device ID.",
+                    "parameters": {
+                        "properties": {
+                            "device_id": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "device_id"
+                        ]
+                    }
+                },
+                {
+                    "name": "get_lyrics",
+                    "description": "Get lyrics for a given music track.",
+                    "parameters": {
+                        "properties": {
+                            "track_name": {
+                                "type": "string"
+                            },
+                            "artist": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "track_name",
+                            "artist"
+                        ]
+                    }
+                }
+            ],
+            "prompts": [],
+            "abilities": [
+                "# MUSIC CONTROL ABILITIES & WORKFLOWS\n\nYou are equipped with tools to control Spotify music playback, search, and manage playlists. To complete user requests accurately, you MUST strictly follow these Standard Operating Procedures (SOPs):\n\n## 1. Safety Check: Device & State Verification (CRITICAL)\nNEVER guess the current playback state and NEVER attempt to play music blindly.\n* **Step 1:** Call `get_playback_state` to check the current active device and playing status.\n* **Step 2:** If `get_playback_state` returns null, empty, or indicates no active device, immediately call `get_playback_device` to check for available devices.\n* **Step 3:** If `get_playback_device` also returns an empty list or no devices, **STOP EXECUTION IMMEDIATELY**. Do not call `playback_control`. Inform the user: \"There are no active Spotify devices found. Please open the Spotify app on your device first.\"\n\n## 2. Searching and Playing Music (Context vs. Single Track)\nWhen a user asks to play music, you must decide whether to use `context_uri` or `uris` based on their exact wording.\n* **Step 1:** Call `spotify_search` with the appropriate `type` (e.g., [\"album\", \"artist\"] for general requests, or [\"track\"] for specific songs).\n* **Step 2:** Choose the playback method:\n    * **Rule A (Default & Preferred):** If the user asks for an artist, an album, or just a general song (without explicitly restricting it to one track), you MUST use `context_uri` (e.g., `spotify:album:...` or `spotify:artist:...`). This ensures music continues playing after the first track. If you searched for a track, find its associated album URI from the search results to use as the `context_uri`.\n    * **Rule B (Strict Single Track):** ONLY use `uris` (e.g., `[\"spotify:track:...\"]`) if the user explicitly asks to play *only* one specific track and stop. \n* **Step 3:** Call `playback_control` with `action: \"play\"` and your chosen `context_uri` or `uris`. (Never send both).\n\n## 3. Playback Control (Pause, Next, Prev)\nBefore changing the music state, verify it via `get_playback_state`.\n* If the user says \"play\" and the state is already playing, DO NOT call `playback_control`.\n* If the user says \"pause\" and the state is already paused, DO NOT call `playback_control`.\n* Otherwise, call `playback_control` with the appropriate `action` (\"pause\", \"next\", \"previous\").\n\n## 4. Switching Playback Devices\nTo transfer music to another speaker, PC, or phone:\n* **Step 1:** Call `get_playback_device` to retrieve the list of available devices.\n* **Step 2:** If the list is empty, **STOP** and inform the user.\n* **Step 3:** Match the user's requested device name to the retrieved list to extract the correct `device_id`.\n* **Step 4:** Call `set_playback_device` using the exact `device_id`.\n\n## 5. Populating a Playlist\nWhen creating a playlist and adding tracks:\n* **Step 1:** Call `create_playlist` (provide `name`). Extract the `playlist_id`.\n* **Step 2:** Call `spotify_search` (with `type: [\"track\"]`) to find the requested tracks. Extract the `track_uri`s.\n* **Step 3:** Call `add_to_playlist` using the `playlist_id` and `track_uri`."
+            ]
         }
     ]
 }
