@@ -9,6 +9,11 @@
             "name": "lmstudio",
             "endpoint": "http://192.168.50.212:1234/v1/",
             "structure": "openai-compatible"
+        },
+        {
+            "name": "mistral",
+            "endpoint": "https://api.mistral.ai/v1/",
+            "structure": "openai-compatible"
         }
     ],
     "agent": {
