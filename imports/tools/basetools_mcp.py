@@ -2,6 +2,7 @@ import os
 import time
 import requests
 from html.parser import HTMLParser
+import uuid
 from typing import Any
 from imports.mcp.base import MCPServer
 
@@ -67,6 +68,8 @@ class BaseToolsMCP(MCPServer):
                 return self.web_search(**arguments)
             elif name == "web_fetch":
                 return self.web_fetch(**arguments)
+            elif name == "get_youtube_transcript":
+                return self.get_youtube_transcript(**arguments)
             else:
                 return {
                     "tool_name": name,
@@ -209,6 +212,63 @@ class BaseToolsMCP(MCPServer):
                 tool_answer["tool_result"] = result[:10000] + "\n... (truncated)"
             else:
                 tool_answer["tool_result"] = result
+            return tool_answer
+
+        except Exception as e:
+            tool_answer["error"] = str(e)
+            return tool_answer
+    def get_youtube_transcript(self, url: str) -> dict:
+        tool_answer = {"tool_name": "get_youtube_transcript", "tool_arguments": {"url": url}, "tool_result": None, "truncate": False, "error": None}
+        
+        try:
+            # Extract video_id
+            video_id = None
+            if "v=" in url:
+                video_id = url.split("v=")[1].split("&")[0]
+            elif "youtu.be/" in url:
+                video_id = url.split("youtu.be/")[1].split("?")[0]
+            
+            if not video_id:
+                tool_answer["error"] = "Invalid YouTube URL"
+                return tool_answer
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (compatible; TinyAgent/1.0)'
+            }
+            cookies = {
+                'anonymous_user_id': str(uuid.uuid4())
+            }
+            
+            api_url = f"https://notegpt.io/api/v2/video-transcript?platform=youtube&video_id={video_id}"
+            response = requests.get(api_url, headers=headers, cookies=cookies, timeout=15)
+            response_json = response.json()
+            
+            if response_json.get("code") != 100000:
+                tool_answer["tool_result"] = {
+                    "code": response_json.get("code"),
+                    "message": response_json.get("message")
+                }
+                return tool_answer
+            
+            data = response_json.get("data", {})
+            video_info = data.get("videoInfo", {})
+            
+            # Find transcription
+            transcript = None
+            lang_codes = data.get("language_code", [])
+            if lang_codes:
+                first_lang = lang_codes[0].get("code")
+                transcripts_dict = data.get("transcripts", {}).get(first_lang, {})
+                for t_type in ["custom", "default", "auto"]:
+                    if transcripts_dict.get(t_type):
+                        transcript = transcripts_dict[t_type]
+                        break
+            
+            tool_answer["tool_result"] = {
+                "name": video_info.get("name"),
+                "author": video_info.get("author"),
+                "transcript": transcript
+            }
             return tool_answer
 
         except Exception as e:
