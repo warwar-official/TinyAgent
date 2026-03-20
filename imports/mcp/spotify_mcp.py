@@ -204,8 +204,26 @@ class SpotifyMCP(MCPServer):
             return res
             
         elif name == "create_playlist":
+            playlist_name = args.get("name")
+            # 1. Check if playlist already exists
+            user_playlists_res = self._make_request("GET", "/me/playlists")
+            if user_playlists_res.get("status") == "success":
+                playlists = user_playlists_res.get("data", {}).get("items", [])
+                for pl in playlists:
+                    if pl.get("name") == playlist_name:
+                        return {
+                            "status": "success",
+                            "message": f"Playlist '{playlist_name}' already exists. Found existing ID.",
+                            "data": {
+                                "id": pl.get("id"),
+                                "name": pl.get("name"),
+                                "description": pl.get("description")
+                            }
+                        }
+
+            # 2. Proceed with creation if not found
             return self._make_request("POST", "/me/playlists", json_data={
-                "name": args.get("name"),
+                "name": playlist_name,
                 "description": args.get("description", ""),
                 "public": args.get("public", True)
             })

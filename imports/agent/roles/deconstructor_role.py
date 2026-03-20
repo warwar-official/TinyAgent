@@ -38,6 +38,8 @@ class TaskDeconstructorRole(AIRole):
         if media:
             user_prompt += f"Available media from previous steps: {json.dumps(media, ensure_ascii=False)}\n\n"
         user_prompt += "Determine the next step or conclude the task."
+        if len(tasks_history) > 15:
+            user_prompt += f"[SYSTEM NOTICE]: tasks_history is too long. Cleanup required."
 
         response_text = self.engine.generate_response(
             role=self,

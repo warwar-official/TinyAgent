@@ -249,7 +249,7 @@ class PipelineEngine:
             
             # ── 4. Worker + Retry loop ──────────────────────────────────
             retry_count = 0
-            max_retries = 3
+            max_retries = 1
             verification_feedback = ""
             step_resolution = "failure"  # default until verified
             step_result_data = {}
@@ -320,24 +320,6 @@ class PipelineEngine:
                     step_result_data = {
                         "action": "delete_history_entry",
                         "result": f"Deleted entries {entry_ids}"
-                    }
-                    
-                elif action == "compress_history_entry":
-                    entry_ids = worker_ans.get("entry_ids", [])
-                    instruction = worker_ans.get("instruction", "")
-                    for eid in entry_ids:
-                        target_entry = next((t for t in tasks_history if t["id"] == eid), None)
-                        if target_entry:
-                            comp_payload = self._clean_payload({"entry": target_entry, "instruction": instruction})
-                            comp_out = self.history_compressor.run(comp_payload)
-                            compressed_txt = comp_out.get("result", {}).get("compressed_text", "")
-                            if compressed_txt:
-                                target_entry["result"] = {"compressed": compressed_txt}
-                                if "compressed" not in target_entry.get("resolution", ""):
-                                    target_entry["resolution"] = target_entry.get("resolution", "") + " (compressed)"
-                    step_result_data = {
-                        "action": "compress_history_entry",
-                        "result": f"Compressed entries {entry_ids}"
                     }
                 
                 # ── 5. Verifier ─────────────────────────────────────────
