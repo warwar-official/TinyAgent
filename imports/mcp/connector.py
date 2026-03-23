@@ -114,12 +114,12 @@ class MCPConnector:
         """Return aggregated tool schemas from all servers."""
         return list(self._tool_schemas)
 
-    def get_all_abilities(self) -> list[str]:
+    def get_all_abilities(self) -> str:
         """Return aggregated abilities from all servers.
         
-        Returns a flat list of strings describing agent skills/capabilities.
+        Returns a single string describing agent skills/capabilities.
         """
-        return list(self._ability_prompts)
+        return "\n\n".join(self._ability_prompts)
 
     def execute_tool(self, name: str, arguments: dict, timeout_seconds: int | None = None) -> Any:
         """Route a tool call to the owning MCP server with a timeout.

@@ -22,6 +22,7 @@ class VerifierRole(AIRole):
         worker_output = payload.get("worker_output", {})
         answer = payload.get("answer", {})
         images = payload.get("images", [])
+        identity = payload.get("identity", "")
         
         if not current_step:
             return {"notes": "No current step to verify.", "result": {"resolution": "success"}}
@@ -42,6 +43,9 @@ class VerifierRole(AIRole):
         
         if images:
             user_prompt += f"Generated images in this step: {json.dumps(images, ensure_ascii=False)}\n"
+            
+        if identity:
+            user_prompt += f"\nSystem Identity (Preferences/Aversions/Constraints):\n{identity}\n"
 
         response_text = self.engine.generate_response(
             role=self,

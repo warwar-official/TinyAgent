@@ -14,7 +14,7 @@ class WorkerRole(AIRole):
         Payload: {
             "current_task": dict,
             "tools": list,
-            "abilities": list,
+            "abilities": str,
             "verification_feedback": str,
         }
         
@@ -27,7 +27,7 @@ class WorkerRole(AIRole):
         feedback = payload.get("verification_feedback", "")
         tasks_history = payload.get("tasks_history", [])
         tools = payload.get("tools", [])
-        abilities = payload.get("abilities", [])
+        abilities = payload.get("abilities", "")
         
         tools_text = json.dumps(tools, ensure_ascii=False)
         
@@ -36,7 +36,7 @@ class WorkerRole(AIRole):
         if tasks_history:
             user_prompt += f"Steps completed so far:\n{json.dumps(tasks_history, indent=2, ensure_ascii=False)}\n\n"
         if abilities:
-            user_prompt += f"Your abilities:\n{json.dumps(abilities, ensure_ascii=False)}\n"
+            user_prompt += f"Your abilities:\n{abilities}\n"
         if feedback:
             user_prompt += f"Feedback from Verifier on previous run: {feedback}\n"
             

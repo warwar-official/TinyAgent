@@ -13,7 +13,7 @@ class TaskDeconstructorRole(AIRole):
         
         Payload: {
             "task_summary": str,
-            "abilities": list,
+            "abilities": str,
             "tasks_history": list,
             "media": list[str],
         }
@@ -26,13 +26,13 @@ class TaskDeconstructorRole(AIRole):
         SYSTEM_PROMPT = self.engine.mcp_connector.generate_prompt("deconstructor_role_prompt", {}) if self.engine.mcp_connector else ""
         
         task_summary = payload.get("task_summary", "")
-        abilities = payload.get("abilities", [])
+        abilities = payload.get("abilities", "")
         tasks_history = payload.get("tasks_history", [])
         media = payload.get("media", [])
         
         user_prompt = f"Task Summary: {task_summary}\n\n"
         if abilities:
-            user_prompt += f"Available Abilities:\n{json.dumps(abilities, ensure_ascii=False)}\n\n"
+            user_prompt += f"Available Abilities:\n{abilities}\n\n"
         if tasks_history:
             user_prompt += f"Steps completed so far:\n{json.dumps(tasks_history, indent=2, ensure_ascii=False)}\n\n"
         if media:

@@ -15,13 +15,14 @@ class Model:
     provider: str
     model_id: str
     api_key_name: str | None
-    vision_enabled: bool = False
+    response_format: str = "text"
     def __init__(self, provider: str, model_id: str, api_key_name: str | None,
-                 vision_enabled: bool = False):
+                 vision_enabled: bool = False, response_format: str = "text"):
         self.provider = provider
         self.model_id = model_id
         self.api_key_name = api_key_name
         self.vision_enabled = vision_enabled
+        self.response_format = response_format
 
 class ProvidersManager:
     def __init__(self, providers: list[dict]):
@@ -188,14 +189,35 @@ class ProvidersManager:
                 request_url += "/"
             request_url += "chat/completions"
             
-        req = urllib.request.Request(
-            request_url, 
-            data=json.dumps(rendered_payload, ensure_ascii=False).encode('utf-8'), 
-            headers=headers, 
-            method='POST'
-        )
-        
-        response_data = self._execute_request_with_retries(req)
+        while True:
+            if model.response_format == "json":
+                if structure == "google-compatible":
+                    rendered_payload["generationConfig"] = {"responseMimeType": "application/json"}
+                elif structure == "openai-compatible":
+                    rendered_payload["response_format"] = {"type": "json_object"}
+            else:
+                if structure == "google-compatible" and "generationConfig" in rendered_payload:
+                    del rendered_payload["generationConfig"]
+                elif structure == "openai-compatible" and "response_format" in rendered_payload:
+                    del rendered_payload["response_format"]
+
+            req = urllib.request.Request(
+                request_url, 
+                data=json.dumps(rendered_payload, ensure_ascii=False).encode('utf-8'), 
+                headers=headers, 
+                method='POST'
+            )
+            
+            try:
+                response_data = self._execute_request_with_retries(req)
+                break
+            except RuntimeError as e:
+                if "HTTP 400" in str(e) and model.response_format == "json":
+                    print("Модель не підтримує JSON-відповіді, використано текстовий режим.")
+                    model.response_format = "text"
+                    continue
+                else:
+                    raise
         
         if structure == "google-compatible":
             try:

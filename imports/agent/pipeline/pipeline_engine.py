@@ -331,6 +331,7 @@ class PipelineEngine:
                     "worker_output": worker_ans,
                     "answer": step_result_data,
                     "images": step_images,
+                    "identity": identity,
                 })
                 verifier_out = self.verifier.run(verifier_payload)
                 self.log_step("Verifier", verifier_payload, verifier_out)
@@ -339,9 +340,16 @@ class PipelineEngine:
                 
                 if resolution == "success":
                     step_resolution = "success"
+                    verification_feedback = verifier_out.get("notes", "")
                     break
                 elif resolution == "interrupt":
                     step_resolution = "interrupt"
+                    verification_feedback = verifier_out.get("notes", "")
+                    break
+                elif resolution == "violation":
+                    step_resolution = "violation"
+                    step_result_data["result"] = "[REMOVED: identity violation]"
+                    verification_feedback = verifier_out.get("notes", "Identity violation.")
                     break
                 else:
                     # failure — retry
@@ -350,12 +358,18 @@ class PipelineEngine:
                     if send_status:
                         send_status(f"Step failed verification (attempt {retry_count}/{max_retries}). Retrying...")
             
+            if step_resolution == "failure":
+                result_str = str(step_result_data.get("result", ""))
+                if len(result_str) > 1000:
+                    step_result_data["result"] = result_str[:1000] + "\n... [TRUNCATED to preserve context space]"
+
             # ── Append to tasks_history ─────────────────────────────────
             history_entry = {
                 "id": step_counter,
                 "description": current_task.get("description", ""),
                 "resolution": step_resolution,
                 "result": step_result_data,
+                "feedback": verification_feedback,
                 # Only keep images from successful steps
                 "media": step_images if step_resolution == "success" else [],
             }

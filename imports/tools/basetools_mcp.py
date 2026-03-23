@@ -1,6 +1,8 @@
 import os
 import time
 import requests
+import json
+import hashlib
 from html.parser import HTMLParser
 import uuid
 from typing import Any
@@ -220,6 +222,19 @@ class BaseToolsMCP(MCPServer):
     def get_youtube_transcript(self, url: str) -> dict:
         tool_answer = {"tool_name": "get_youtube_transcript", "tool_arguments": {"url": url}, "tool_result": None, "truncate": False, "error": None}
         
+        url_hash = hashlib.md5(url.encode('utf-8')).hexdigest()
+        cache_dir = "data/cache/youtube_transcripts"
+        cache_file = os.path.join(cache_dir, f"{url_hash}.json")
+        
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                    tool_answer["tool_result"] = cached_data
+                    return tool_answer
+            except Exception:
+                pass
+
         try:
             # Extract video_id
             video_id = None
@@ -269,6 +284,14 @@ class BaseToolsMCP(MCPServer):
                 "author": video_info.get("author"),
                 "transcript": transcript
             }
+            
+            os.makedirs(cache_dir, exist_ok=True)
+            try:
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(tool_answer["tool_result"], f, ensure_ascii=False)
+            except Exception:
+                pass
+                
             return tool_answer
 
         except Exception as e:
