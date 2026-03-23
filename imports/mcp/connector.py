@@ -110,9 +110,12 @@ class MCPConnector:
     # Public API
     # ------------------------------------------------------------------
 
-    def get_available_tools(self) -> list[dict]:
+    def get_available_tools(self, include_hidden: bool = False) -> list[dict]:
         """Return aggregated tool schemas from all servers."""
-        return list(self._tool_schemas)
+        if include_hidden:
+            return list(self._tool_schemas)
+        
+        return [t for t in self._tool_schemas if not t.get("hidden")]
 
     def get_all_abilities(self) -> str:
         """Return aggregated abilities from all servers.
