@@ -1,3 +1,4 @@
+import datetime
 import json
 import traceback
 from typing import Callable, Optional
@@ -106,7 +107,7 @@ class PipelineEngine:
         """Check if pipeline is suspended waiting for user input."""
         return self._suspended_state is not None
 
-    def run_pipeline(self, initial_payload: dict, history_manager, send_status: Optional[Callable[[str], None]] = None) -> dict:
+    def run_pipeline(self, initial_payload: dict, history_manager, execution_trace_manager=None, send_status: Optional[Callable[[str], None]] = None) -> dict:
         """
         Executes the main role-based execution pipeline with strict role isolation.
         
@@ -118,7 +119,7 @@ class PipelineEngine:
         """
         # ── Check for pipeline resumption (ask_user continuation) ────
         if self._suspended_state is not None:
-            return self._resume_pipeline(initial_payload, history_manager, send_status)
+            return self._resume_pipeline(initial_payload, history_manager, execution_trace_manager, send_status)
 
         # Extract core inputs
         user_input = initial_payload.get("input_message", {}).get("text", "")
@@ -161,6 +162,10 @@ class PipelineEngine:
         identity = self.mcp_connector.get_identity_prompt() if self.mcp_connector else ""
         language = self.mcp_connector.get_language() if hasattr(self.mcp_connector, "get_language") else "English"
         
+        now = datetime.datetime.now()
+        system_time = now.strftime("%H:%M %a %d %B %Y")
+        execution_trace = execution_trace_manager.get_trace() if execution_trace_manager else {}
+        
         # ── 2. Router ───────────────────────────────────────────────────
         # Receives: input, history, identity, memory, input_images
         if send_status:
@@ -172,6 +177,8 @@ class PipelineEngine:
             "identity": identity,
             "memory": memories,
             "input_images": input_images,
+            "system_time": system_time,
+            "execution_trace": execution_trace,
         })
         router_out = self.router.run(router_payload)
         self.log_step("Router", router_payload, router_out)
@@ -196,6 +203,8 @@ class PipelineEngine:
                 "language": language,
                 "input_images": input_images,
                 "media": [],
+                "system_time": system_time,
+                "execution_trace": execution_trace,
             })
             formatter_out = self.formatter.run(formatter_payload)
             self.log_step("Formatter", formatter_payload, formatter_out)
@@ -240,11 +249,12 @@ class PipelineEngine:
             history_records=history_records,
             relevant_skills=relevant_skills,
             history_manager=history_manager,
+            execution_trace_manager=execution_trace_manager,
             send_status=send_status,
             max_iterations=MAX_ITERATIONS,
         )
 
-    def _resume_pipeline(self, initial_payload: dict, history_manager, send_status: Optional[Callable[[str], None]] = None) -> dict:
+    def _resume_pipeline(self, initial_payload: dict, history_manager, execution_trace_manager=None, send_status: Optional[Callable[[str], None]] = None) -> dict:
         """Resume pipeline after ask_user suspension."""
         state = self._suspended_state
         self._suspended_state = None  # Clear suspended state
@@ -283,6 +293,7 @@ class PipelineEngine:
             history_records=history_manager.get_dialog_records(),
             relevant_skills=state.get("relevant_skills", []),
             history_manager=history_manager,
+            execution_trace_manager=execution_trace_manager,
             send_status=send_status,
             max_iterations=90,
         )
@@ -303,10 +314,18 @@ class PipelineEngine:
         history_records: list,
         relevant_skills: list,
         history_manager,
+        execution_trace_manager=None,
         send_status: Optional[Callable[[str], None]] = None,
         max_iterations: int = 90,
     ) -> dict:
         """Core task execution loop, extracted for reuse by run_pipeline and _resume_pipeline."""
+        
+        now = datetime.datetime.now()
+        system_time = now.strftime("%H:%M %a %d %B %Y")
+        execution_trace = execution_trace_manager.get_trace() if execution_trace_manager else {}
+        
+        if execution_trace_manager:
+            execution_trace_manager.start_task(task_summary)
         
         # ── Iterative execution loop ────────────────────────────────────
         for iteration in range(max_iterations):
@@ -426,6 +445,8 @@ class PipelineEngine:
                         "language": language,
                         "input_images": input_images,
                         "media": [],
+                        "system_time": system_time,
+                        "execution_trace": execution_trace,
                     })
                     formatter_out = self.formatter.run(formatter_payload)
                     self.log_step("Formatter_AskUser", formatter_payload, formatter_out)
@@ -526,6 +547,11 @@ class PipelineEngine:
             # Collect images only from successful steps
             if step_resolution == "success" and step_images:
                 collected_images.extend(step_images)
+                
+            # Add step to execution trace manager
+            if execution_trace_manager:
+                trace_args = worker_ans.get("arguments", {}) if action == "tool" else {"message": worker_ans.get("message", worker_ans.get("answer", ""))}
+                execution_trace_manager.add_step(action=action, args=trace_args, status=step_resolution)
         
         else:
             # Loop exhausted MAX_ITERATIONS
@@ -591,6 +617,8 @@ class PipelineEngine:
             "language": language,
             "input_images": input_images,
             "media": all_images,
+            "system_time": system_time,
+            "execution_trace": execution_trace,
         })
         formatter_out = self.formatter.run(formatter_payload)
         self.log_step("Formatter", formatter_payload, formatter_out)

@@ -3,8 +3,9 @@ from imports.messaging.queue_manager import MessageBus
 from imports.messaging.message_models import AgentRequest, AgentResponse
 from imports.agent.pipeline.pipeline_engine import PipelineEngine
 from imports.history_manager import HistoryManager
+from imports.execution_trace import ExecutionTraceManager
 
-def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, history_manager: HistoryManager) -> None:
+def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, history_manager: HistoryManager, execution_trace_manager: ExecutionTraceManager) -> None:
     """
     Background thread that continually reads from frontend_to_backend queue
     and passes tasks to the single PipelineEngine instance.
@@ -69,7 +70,12 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
             try:
                 pipeline_result = None
                 if request.action == "message":
-                    pipeline_result = pipeline_engine.run_pipeline(initial_payload, history_manager=history_manager, send_status=send_status)
+                    pipeline_result = pipeline_engine.run_pipeline(
+                        initial_payload, 
+                        history_manager=history_manager, 
+                        execution_trace_manager=execution_trace_manager, 
+                        send_status=send_status
+                    )
                 
                 # Extract text and images from pipeline result
                 if isinstance(pipeline_result, dict):

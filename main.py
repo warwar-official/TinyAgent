@@ -3,6 +3,7 @@ dotenv.load_dotenv()
 
 from imports.image_manager import ImageManager
 from imports.history_manager import HistoryManager
+from imports.execution_trace import ExecutionTraceManager
 from prompt_toolkit import PromptSession
 from imports.plugins.telegram import bot_process, stop_bot
 from threading import Thread
@@ -96,12 +97,15 @@ def main():
     history_path = config.get("context", {}).get("history_path", "./data/history.json")
     history_manager = HistoryManager(history_path)
 
+    # Initialize ExecutionTraceManager
+    execution_trace_manager = ExecutionTraceManager(max_steps=20)
+
     # 1. Start generic queues processor
     frontend_listener_thread = Thread(target=frontend_listener_loop, args=(bus,), daemon=True)
     frontend_listener_thread.start()
     
     # 2. Start the Backend Processing loop
-    backend_thread = Thread(target=backend_worker_loop, args=(bus, pipeline_engine, history_manager), daemon=True)
+    backend_thread = Thread(target=backend_worker_loop, args=(bus, pipeline_engine, history_manager, execution_trace_manager), daemon=True)
     backend_thread.start()
 
     # 3. Start Frontends
