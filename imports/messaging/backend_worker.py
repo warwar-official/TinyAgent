@@ -48,6 +48,9 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                     ))
                     continue
 
+            # Determine if this is a pipeline resumption (ask_user continuation)
+            is_resuming = pipeline_engine.is_waiting_for_user
+
             # Add User message to Conversational History
             if request.action == "message":
                 history_manager.add_dialog_record("user", request.text, image_hashes=request.image_hashes)
@@ -70,8 +73,29 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                 
                 # Extract text and images from pipeline result
                 if isinstance(pipeline_result, dict):
-                    answer = pipeline_result.get("text", "Processing error.")
-                    images = pipeline_result.get("images", [])
+                    result_type = pipeline_result.get("type", "")
+                    
+                    if result_type == "ask_user":
+                        # Pipeline is suspended — send the question and wait for user response
+                        answer = pipeline_result.get("text", "I need more information.")
+                        images = pipeline_result.get("images", [])
+                        
+                        # Add the ask_user question to history as model's message
+                        if request.action == "message":
+                            history_manager.add_dialog_record("model", answer, image_hashes=images)
+                        
+                        # Send as final_response (the user will reply, and pipeline will resume)
+                        bus.send_to_frontend(AgentResponse(
+                            frontend_type=request.frontend_type,
+                            chat_id=request.chat_id,
+                            type="final_response",
+                            text=answer,
+                            image_hashes=images,
+                        ))
+                        continue  # Skip post-pipeline jobs, wait for user reply
+                    else:
+                        answer = pipeline_result.get("text", "Processing error.")
+                        images = pipeline_result.get("images", [])
                 elif pipeline_result is not None:
                     answer = str(pipeline_result)
                 
@@ -94,7 +118,7 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                 image_hashes=images
             ))
             
-            # Post-pipeline background jobs
+            # Post-pipeline background jobs (only for completed pipelines, not ask_user)
             if request.action == "message":
                 def post_pipeline_jobs():
                     try:

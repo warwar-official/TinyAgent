@@ -20,6 +20,7 @@ Output EXACTLY and ONLY the final merged sentence. Do not add any conversational
 
 COLLECTION_NAME = "memories"
 ARCHIVED_COLLECTION_NAME = "archived_messages"
+SKILLS_COLLECTION_NAME = "skills"
 IDENTICAL_THRESHOLD = 0.97  # cosine: 1.0 = identical
 SIMILAR_THRESHOLD = 0.85    # cosine: high overlap warrants merging
 
@@ -262,6 +263,15 @@ class MemoryRAG:
                     distance=models.Distance.COSINE,
                 ),
             )
+            
+        if SKILLS_COLLECTION_NAME not in collections:
+            self.client.create_collection(
+                collection_name=SKILLS_COLLECTION_NAME,
+                vectors_config=models.VectorParams(
+                    size=vector_size,
+                    distance=models.Distance.COSINE,
+                ),
+            )
 
     def add_archived_message(self, user_msg: str, model_msg: str) -> None:
         text = f"User: {user_msg}\nModel: {model_msg}"
@@ -285,6 +295,92 @@ class MemoryRAG:
             limit=limit,
         ).points
         
+        return [p.payload for p in results if p.payload]
+
+    def add_skill(self, skill_data: dict) -> None:
+        """Add a new skill. Skips near-identical, merges similar, or inserts new.
+        
+        Args:
+            skill_data: Dict with task_signature, steps, successful_path, failed_paths, notes.
+        """
+        signature = skill_data.get("task_signature", "")
+        if not signature:
+            return
+            
+        vector = list(self.embedding_model.embed([signature]))[0].tolist()
+
+        # Check for near-duplicates
+        existing = self.client.query_points(
+            collection_name=SKILLS_COLLECTION_NAME,
+            query=vector,
+            limit=1,
+        ).points
+
+        if existing:
+            top = existing[0]
+            score = top.score if top.score is not None else 0.0
+
+            if score > IDENTICAL_THRESHOLD:
+                # Near-identical — skip
+                return
+
+            if score > SIMILAR_THRESHOLD:
+                # Similar — merge: update with new data (new overrides old)
+                old_payload = dict(top.payload or {})
+                # Merge successful paths
+                old_paths = old_payload.get("successful_path", [])
+                new_paths = skill_data.get("successful_path", [])
+                merged_paths = old_paths + [p for p in new_paths if p not in old_paths]
+                # Merge failed paths
+                old_failed = old_payload.get("failed_paths", [])
+                new_failed = skill_data.get("failed_paths", [])
+                merged_failed = old_failed + [p for p in new_failed if p not in old_failed]
+                
+                old_payload["task_signature"] = signature
+                old_payload["steps"] = skill_data.get("steps", old_payload.get("steps", []))
+                old_payload["successful_path"] = merged_paths
+                old_payload["failed_paths"] = merged_failed
+                old_payload["notes"] = skill_data.get("notes", old_payload.get("notes", ""))
+                
+                self.client.upsert(
+                    collection_name=SKILLS_COLLECTION_NAME,
+                    points=[models.PointStruct(
+                        id=top.id,
+                        vector=vector,
+                        payload=old_payload,
+                    )]
+                )
+                return
+
+        # New distinct skill
+        point_id = str(uuid.uuid4())
+        payload = {
+            "task_signature": signature,
+            "steps": skill_data.get("steps", []),
+            "successful_path": skill_data.get("successful_path", []),
+            "failed_paths": skill_data.get("failed_paths", []),
+            "notes": skill_data.get("notes", ""),
+            "time_created": time.time(),
+        }
+
+        self.client.upsert(
+            collection_name=SKILLS_COLLECTION_NAME,
+            points=[models.PointStruct(
+                id=point_id,
+                vector=vector,
+                payload=payload,
+            )]
+        )
+
+    def search_skills(self, query: str, limit: int = 3, similarity_threshold: float = 0.75) -> list[dict]:
+        """Search skills by semantic similarity."""
+        query_vector = list(self.embedding_model.embed([query]))[0].tolist()
+        results = self.client.query_points(
+            collection_name=SKILLS_COLLECTION_NAME,
+            query=query_vector,
+            limit=limit,
+            score_threshold=similarity_threshold,
+        ).points
         return [p.payload for p in results if p.payload]
 
     @staticmethod

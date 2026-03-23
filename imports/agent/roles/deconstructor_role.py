@@ -29,10 +29,13 @@ class TaskDeconstructorRole(AIRole):
         abilities = payload.get("abilities", "")
         tasks_history = payload.get("tasks_history", [])
         media = payload.get("media", [])
+        relevant_skills = payload.get("relevant_skills", [])
         
         user_prompt = f"Task Summary: {task_summary}\n\n"
         if abilities:
             user_prompt += f"Available Abilities:\n{abilities}\n\n"
+        if relevant_skills:
+            user_prompt += f"Relevant Skills from past executions (use as reference, not strict instruction):\n{json.dumps(relevant_skills, indent=2, ensure_ascii=False)}\n\n"
         if tasks_history:
             user_prompt += f"Steps completed so far:\n{json.dumps(tasks_history, indent=2, ensure_ascii=False)}\n\n"
         if media:

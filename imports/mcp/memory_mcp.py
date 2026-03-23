@@ -51,5 +51,16 @@ class MemoryMCP(MCPServer):
             limit = min(args.get("limit", 2), 5)
             results = self.memory_rag.search_archived_messages(query, limit=limit)
             return {"results": results}
+        elif tool_name == "save_skill":
+            skill_data = args.get("skill_data", {})
+            if not skill_data:
+                return {"status": "error", "message": "No skill data provided."}
+            self.memory_rag.add_skill(skill_data)
+            return {"status": "success", "message": "Skill saved"}
+        elif tool_name == "search_skills":
+            query = args.get("query", "")
+            limit = min(args.get("limit", 3), 5)
+            results = self.memory_rag.search_skills(query, limit=limit)
+            return {"results": results}
         else:
             raise ValueError(f"MemoryMCP: Unknown tool {tool_name}")

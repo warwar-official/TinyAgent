@@ -16,6 +16,7 @@ from imports.agent.roles.memory_retrieval_role import MemoryRetrievalRole
 from imports.agent.roles.memory_creation_role import MemoryCreationRole
 from imports.agent.roles.summary_role import SummaryRole
 from imports.agent.roles.history_compressor_role import HistoryCompressorRole
+from imports.agent.roles.skill_builder_role import SkillBuilderRole
 
 class PipelineEngine:
     def __init__(self, providers_manager: ProvidersManager, model: Model, config: dict, image_manager=None, mcp_connector=None):
@@ -24,6 +25,9 @@ class PipelineEngine:
         self.config = config
         self.image_manager = image_manager
         self.mcp_connector = mcp_connector
+
+        # Pipeline suspension state for ask_user
+        self._suspended_state: dict | None = None
 
         # Initialize Roles
         self.router = RouterRole(self)
@@ -36,6 +40,7 @@ class PipelineEngine:
         self.memory_creation = MemoryCreationRole(self)
         self.summary = SummaryRole(self)
         self.history_compressor = HistoryCompressorRole(self)
+        self.skill_builder = SkillBuilderRole(self)
 
     def _clean_payload(self, data, skip=False):
         """Recursively removes empty strings, lists, and dicts, except in specific nested keys."""
@@ -96,6 +101,11 @@ class PipelineEngine:
         except Exception as e:
             return f"Error executing tool {tool_name}: {str(e)}"
 
+    @property
+    def is_waiting_for_user(self) -> bool:
+        """Check if pipeline is suspended waiting for user input."""
+        return self._suspended_state is not None
+
     def run_pipeline(self, initial_payload: dict, history_manager, send_status: Optional[Callable[[str], None]] = None) -> dict:
         """
         Executes the main role-based execution pipeline with strict role isolation.
@@ -104,7 +114,12 @@ class PipelineEngine:
         
         Returns:
             dict: {"text": str, "images": list[str]}
+                  or {"type": "ask_user", "text": str, "images": list[str]} if suspended
         """
+        # ── Check for pipeline resumption (ask_user continuation) ────
+        if self._suspended_state is not None:
+            return self._resume_pipeline(initial_payload, history_manager, send_status)
+
         # Extract core inputs
         user_input = initial_payload.get("input_message", {}).get("text", "")
         input_images = initial_payload.get("input_message", {}).get("image_hashes", [])
@@ -197,8 +212,104 @@ class PipelineEngine:
         collected_images = []
         step_counter = 0
         
+        # ── Skill Retrieval ─────────────────────────────────────────────
+        relevant_skills = []
+        if self.mcp_connector:
+            try:
+                skill_res = self.mcp_connector.execute_tool("search_skills", {"query": task_summary, "limit": 3})
+                if isinstance(skill_res, dict) and "results" in skill_res:
+                    relevant_skills = skill_res["results"]
+                    if relevant_skills:
+                        print(f"[DEBUG] Found {len(relevant_skills)} relevant skill(s) for task")
+            except Exception as e:
+                print(f"[DEBUG] Error searching skills: {e}")
+
+        # Execute the task loop
+        return self._execute_task_loop(
+            task_summary=task_summary,
+            abilities=abilities,
+            tools=tools,
+            tasks_history=tasks_history,
+            collected_images=collected_images,
+            step_counter=step_counter,
+            identity=identity,
+            language=language,
+            memories=memories,
+            user_input_with_context=user_input_with_context,
+            input_images=input_images,
+            history_records=history_records,
+            relevant_skills=relevant_skills,
+            history_manager=history_manager,
+            send_status=send_status,
+            max_iterations=MAX_ITERATIONS,
+        )
+
+    def _resume_pipeline(self, initial_payload: dict, history_manager, send_status: Optional[Callable[[str], None]] = None) -> dict:
+        """Resume pipeline after ask_user suspension."""
+        state = self._suspended_state
+        self._suspended_state = None  # Clear suspended state
+
+        user_response = initial_payload.get("input_message", {}).get("text", "")
+        
+        # Inject the user's response into the current task context
+        current_task = state["current_task"]
+        current_task["user_response"] = user_response
+        
+        # Append the ask_user step and the user's response to tasks_history
+        state["tasks_history"].append({
+            "id": state["step_counter"],
+            "description": current_task.get("description", ""),
+            "resolution": "success",
+            "result": {"action": "ask_user", "result": f"Asked user, received: {user_response}"},
+            "feedback": "",
+            "media": [],
+        })
+        
+        if send_status:
+            send_status("Continuing task with your response...")
+
+        return self._execute_task_loop(
+            task_summary=state["task_summary"],
+            abilities=state["abilities"],
+            tools=state["tools"],
+            tasks_history=state["tasks_history"],
+            collected_images=state["collected_images"],
+            step_counter=state["step_counter"],
+            identity=state["identity"],
+            language=state["language"],
+            memories=state["memories"],
+            user_input_with_context=state["user_input_with_context"],
+            input_images=state["input_images"],
+            history_records=history_manager.get_dialog_records(),
+            relevant_skills=state.get("relevant_skills", []),
+            history_manager=history_manager,
+            send_status=send_status,
+            max_iterations=90,
+        )
+
+    def _execute_task_loop(
+        self,
+        task_summary: str,
+        abilities,
+        tools: list,
+        tasks_history: list,
+        collected_images: list,
+        step_counter: int,
+        identity: str,
+        language: str,
+        memories: list,
+        user_input_with_context: str,
+        input_images: list,
+        history_records: list,
+        relevant_skills: list,
+        history_manager,
+        send_status: Optional[Callable[[str], None]] = None,
+        max_iterations: int = 90,
+    ) -> dict:
+        """Core task execution loop, extracted for reuse by run_pipeline and _resume_pipeline."""
+        
         # ── Iterative execution loop ────────────────────────────────────
-        for iteration in range(MAX_ITERATIONS):
+        for iteration in range(max_iterations):
             
             # Check for mid-loop summary
             if len(history_manager.get_dialog_records()) >= 20:
@@ -217,6 +328,7 @@ class PipelineEngine:
                 "abilities": abilities,
                 "tasks_history": tasks_history,
                 "media": collected_images,
+                "relevant_skills": relevant_skills,
             })
             deconstructor_out = self.deconstructor.run(deconstructor_payload)
             self.log_step("Deconstructor", deconstructor_payload, deconstructor_out)
@@ -300,7 +412,43 @@ class PipelineEngine:
                         pass
                     
                 elif action == "ask_user":
-                    return {"text": worker_ans.get("message", "I need more information to proceed."), "images": []}
+                    # ── SUSPEND PIPELINE: ask_user ──────────────────────
+                    raw_question = worker_ans.get("message", "I need more information to proceed.")
+                    
+                    # Style the question through Formatter
+                    formatter_payload = self._clean_payload({
+                        "input": user_input_with_context,
+                        "raw_answer": raw_question,
+                        "task_summary": task_summary,
+                        "history": history_records,
+                        "memory": memories,
+                        "identity": identity,
+                        "language": language,
+                        "input_images": input_images,
+                        "media": [],
+                    })
+                    formatter_out = self.formatter.run(formatter_payload)
+                    self.log_step("Formatter_AskUser", formatter_payload, formatter_out)
+                    styled_question = formatter_out.get("result", {}).get("final_user_message", raw_question)
+                    
+                    # Save pipeline state for resumption
+                    self._suspended_state = {
+                        "task_summary": task_summary,
+                        "tasks_history": tasks_history,
+                        "collected_images": collected_images,
+                        "step_counter": step_counter,
+                        "current_task": current_task,
+                        "abilities": abilities,
+                        "tools": tools,
+                        "identity": identity,
+                        "language": language,
+                        "memories": memories,
+                        "user_input_with_context": user_input_with_context,
+                        "input_images": input_images,
+                        "relevant_skills": relevant_skills,
+                    }
+                    
+                    return {"type": "ask_user", "text": styled_question, "images": []}
                     
                 elif action == "text":
                     step_result_data = {
@@ -385,11 +533,32 @@ class PipelineEngine:
                 "id": step_counter + 1,
                 "description": "Step limit reached",
                 "resolution": "interrupt",
-                "result": f"Pipeline interrupted: maximum iteration limit ({MAX_ITERATIONS}) reached.",
+                "result": f"Pipeline interrupted: maximum iteration limit ({max_iterations}) reached.",
                 "media": [],
             })
             if send_status:
-                send_status(f"Step limit ({MAX_ITERATIONS}) reached. Aggregating results...")
+                send_status(f"Step limit ({max_iterations}) reached. Aggregating results...")
+        
+        # ── SkillBuilder (before Aggregator) ────────────────────────────
+        try:
+            if send_status:
+                send_status("Extracting skills...")
+            skill_payload = self._clean_payload({
+                "task_summary": task_summary,
+                "tasks_history": tasks_history,
+                "input_images": input_images,
+                "media": collected_images,
+            })
+            skill_out = self.skill_builder.run(skill_payload)
+            self.log_step("SkillBuilder", skill_payload, skill_out)
+            
+            if skill_out.get("result", {}).get("save_skill", False):
+                skill_data = skill_out.get("result", {}).get("skill", {})
+                if skill_data and self.mcp_connector:
+                    self.mcp_connector.execute_tool("save_skill", {"skill_data": skill_data})
+                    print(f"[DEBUG] Skill saved: {skill_data.get('task_signature', 'unknown')}")
+        except Exception as e:
+            print(f"[DEBUG] SkillBuilder error: {e}")
                     
         # ── 6. Aggregator ───────────────────────────────────────────────
         if send_status:

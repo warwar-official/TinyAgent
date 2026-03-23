@@ -75,6 +75,10 @@
                 {
                     "name": "router_role_prompt",
                     "description": "Prompt for the Router role."
+                },
+                {
+                    "name": "skill_builder_role_prompt",
+                    "description": "Prompt for the Skill Builder role."
                 }
             ],
             "abilities": []
@@ -243,6 +247,39 @@
                             "limit": {
                                 "type": "integer",
                                 "default": 2
+                            }
+                        },
+                        "required": [
+                            "query"
+                        ]
+                    }
+                },
+                {
+                    "name": "save_skill",
+                    "description": "Save a learned execution skill into the skills database.",
+                    "parameters": {
+                        "properties": {
+                            "skill_data": {
+                                "type": "object",
+                                "description": "Skill object with task_signature, steps, successful_path, failed_paths, notes."
+                            }
+                        },
+                        "required": [
+                            "skill_data"
+                        ]
+                    }
+                },
+                {
+                    "name": "search_skills",
+                    "description": "Search learned execution skills by task description.",
+                    "parameters": {
+                        "properties": {
+                            "query": {
+                                "type": "string"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "default": 3
                             }
                         },
                         "required": [

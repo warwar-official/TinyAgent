@@ -261,7 +261,23 @@ class SpotifyMCP(MCPServer):
         elif name == "get_user_playlists":
             limit = args.get("limit", 50)
             offset = args.get("offset", 0)
-            return self._make_request("GET", "/me/playlists", params={"limit": limit, "offset": offset})
+            res = self._make_request("GET", "/me/playlists", params={"limit": limit, "offset": offset})
+            if res.get("status") == "success" and res.get("data"):
+                items = res["data"].get("items", [])
+                playlists = []
+                for pl in items:
+                    if not pl:
+                        continue
+                    playlists.append({
+                        "id": pl.get("id"),
+                        "name": pl.get("name"),
+                        "description": pl.get("description", ""),
+                        "tracks_count": pl.get("tracks", {}).get("total", 0),
+                        "owner": pl.get("owner", {}).get("display_name", ""),
+                        "uri": pl.get("uri"),
+                    })
+                return {"status": "success", "data": playlists, "total": res["data"].get("total", 0)}
+            return res
             
         elif name == "get_playback_state":
             res = self._make_request("GET", "/me/player")
