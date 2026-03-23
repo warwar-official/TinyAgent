@@ -258,6 +258,11 @@ class SpotifyMCP(MCPServer):
             playlist_id = args.get("playlist_id")
             return self._make_request("GET", f"/playlists/{playlist_id}")
             
+        elif name == "get_user_playlists":
+            limit = args.get("limit", 50)
+            offset = args.get("offset", 0)
+            return self._make_request("GET", "/me/playlists", params={"limit": limit, "offset": offset})
+            
         elif name == "get_playback_state":
             res = self._make_request("GET", "/me/player")
             if res.get("status") == "success" and res.get("data"):
