@@ -251,8 +251,29 @@ class SpotifyMCP(MCPServer):
             
         elif name == "remove_from_playlist":
             playlist_id = args.get("playlist_id")
-            track_uri = args.get("track_uri")
-            return self._make_request("DELETE", f"/playlists/{playlist_id}/items", json_data={"tracks": [{"uri": track_uri}]})
+            track_uris = args.get("track_uris") or args.get("uris")
+            if not track_uris:
+                single = args.get("track_uri")
+                track_uris = [single] if single else []
+            if not isinstance(track_uris, list):
+                track_uris = [track_uris]
+            if not track_uris:
+                return {"status": "error", "message": "No track URIs provided."}
+
+            snapshot_id = args.get("snapshot_id")
+            results = []
+            for i in range(0, len(track_uris), 100):
+                chunk = track_uris[i:i + 100]
+                items = [{"uri": uri} for uri in chunk]
+                req_data = {"items": items}
+                if snapshot_id:
+                    req_data["snapshot_id"] = snapshot_id
+                    
+                res = self._make_request("DELETE", f"/playlists/{playlist_id}/items", json_data=req_data)
+                results.append(res)
+                if res.get("status") != "success":
+                    return res
+            return {"status": "success", "message": f"Removed {len(track_uris)} track(s) from playlist."}
             
         elif name == "get_playlist":
             playlist_id = args.get("playlist_id")

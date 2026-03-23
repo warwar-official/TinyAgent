@@ -451,13 +451,31 @@
                             "playlist_id": {
                                 "type": "string"
                             },
+                            "track_uris": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "List of track URIs to remove, e.g. [\"spotify:track:...\", ...]. Preferred over track_uri for bulk removal."
+                            },
+                            "uris": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "Alias for track_uris."
+                            },
                             "track_uri": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "Single track URI, e.g. spotify:track:... (use track_uris for multiple)"
+                            },
+                            "snapshot_id": {
+                                "type": "string",
+                                "description": "Optional snapshot ID of the playlist state."
                             }
                         },
                         "required": [
-                            "playlist_id",
-                            "track_uri"
+                            "playlist_id"
                         ]
                     }
                 },
