@@ -79,6 +79,10 @@
                 {
                     "name": "skill_builder_role_prompt",
                     "description": "Prompt for the Skill Builder role."
+                },
+                {
+                    "name": "executor_role_prompt",
+                    "description": "Prompt for the Executor role."
                 }
             ],
             "abilities": []

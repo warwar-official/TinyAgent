@@ -180,3 +180,12 @@ class MCPConnector:
             if get_lang_func:
                 return get_lang_func()
         return "English"
+
+    def get_verifier_identity_prompt(self) -> str:
+        """Return trimmed identity for Verifier (only psychological_profile + constraints)."""
+        if self.identity_mcp:
+            func = getattr(self.identity_mcp, "verifier_identity_prompt", None)
+            if func:
+                return func()
+        return ""
+

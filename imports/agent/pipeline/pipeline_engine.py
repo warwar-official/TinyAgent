@@ -8,8 +8,7 @@ from imports.agent.pipeline.role_base import AIRole
 
 # Import Roles
 from imports.agent.roles.router_role import RouterRole
-from imports.agent.roles.deconstructor_role import TaskDeconstructorRole
-from imports.agent.roles.worker_role import WorkerRole
+from imports.agent.roles.executor_role import ExecutorRole
 from imports.agent.roles.verifier_role import VerifierRole
 from imports.agent.roles.aggregator_role import AggregatorRole
 from imports.agent.roles.formatter_role import PersonalityFormatterRole
@@ -32,8 +31,7 @@ class PipelineEngine:
 
         # Initialize Roles
         self.router = RouterRole(self)
-        self.deconstructor = TaskDeconstructorRole(self)
-        self.worker = WorkerRole(self)
+        self.executor = ExecutorRole(self)
         self.verifier = VerifierRole(self)
         self.aggregator = AggregatorRole(self)
         self.formatter = PersonalityFormatterRole(self)
@@ -261,9 +259,15 @@ class PipelineEngine:
 
         user_response = initial_payload.get("input_message", {}).get("text", "")
         
-        # Inject the user's response into the current task context
-        current_task = state["current_task"]
-        current_task["user_response"] = user_response
+        # Append the ask_user + user response as a completed step
+        state["tasks_history"].append({
+            "id": state["step_counter"],
+            "description": "Asked user for input",
+            "resolution": "success",
+            "result": {"action": "ask_user", "response": user_response},
+            "feedback": "",
+            "media": [],
+        })
         
         if send_status:
             send_status("Continuing task with your response...")
@@ -308,19 +312,24 @@ class PipelineEngine:
         send_status: Optional[Callable[[str], None]] = None,
         max_iterations: int = 90,
     ) -> dict:
-        """Core task execution loop, extracted for reuse by run_pipeline and _resume_pipeline."""
+        """Core task execution loop using the unified Executor role."""
         
         now = datetime.datetime.now()
         system_time = now.strftime("%H:%M %a %d %B %Y")
         execution_trace = execution_trace_manager.get_markdown_trace() if execution_trace_manager else ""
         
+        # Get trimmed identity for Verifier (only psychological_profile + constraints)
+        verifier_identity = self.mcp_connector.get_verifier_identity_prompt() if self.mcp_connector else ""
+        
         if execution_trace_manager:
             execution_trace_manager.start_task(task_summary)
         
-        # ── Iterative execution loop ────────────────────────────────────
+        verification_feedback = ""
+        
+        # ── Iterative Executor loop ─────────────────────────────────────
         for iteration in range(max_iterations):
             
-            # Check for mid-loop summary
+            # Check for mid-loop dialog summary
             if len(history_manager.get_dialog_records()) >= 20:
                 if send_status:
                     send_status("Summarizing long conversation...")
@@ -328,34 +337,39 @@ class PipelineEngine:
                 sum_out = self.summary.run(summary_payload, history_manager=history_manager)
                 self.log_step("Summary", summary_payload, sum_out)
             
-            # ── 3. Deconstructor (next step) ────────────────────────────
+            # ── Executor: analyze state + choose action ─────────────────
             if send_status:
-                send_status("Planning next step...")
+                send_status("Executor analyzing next action...")
             
-            deconstructor_payload = self._clean_payload({
+            # Limit tasks_history to last 5 entries for Executor
+            recent_history = tasks_history[-5:] if len(tasks_history) > 5 else tasks_history
+            
+            executor_payload = self._clean_payload({
                 "task_summary": task_summary,
                 "abilities": abilities,
-                "tasks_history": tasks_history,
-                "history": history_records,
+                "tools": tools,
+                "tasks_history": recent_history,
                 "media": collected_images,
                 "relevant_skills": relevant_skills,
+                "verification_feedback": verification_feedback,
             })
-            deconstructor_out = self.deconstructor.run(deconstructor_payload)
-            self.log_step("Deconstructor", deconstructor_payload, deconstructor_out)
+            executor_out = self.executor.run(executor_payload)
+            self.log_step("Executor", executor_payload, executor_out)
             
-            decision = deconstructor_out.get("result", {}).get("decision", "next_task")
+            result = executor_out.get("result", {})
+            decision = result.get("decision", "next_action")
             
-            # Check for completion or interruption
+            # ── Check for completion / interruption ──────────────────────
             if decision == "task_completed":
                 if send_status:
                     send_status("Task completed.")
                 break
             
             if decision == "task_interrupted":
-                reason = deconstructor_out.get("result", {}).get("reason", "Unknown reason")
+                reason = result.get("reason", "Unknown reason")
                 tasks_history.append({
                     "id": step_counter + 1,
-                    "description": "Task interrupted by planner",
+                    "description": "Task interrupted",
                     "resolution": "interrupt",
                     "result": reason,
                     "media": [],
@@ -364,198 +378,153 @@ class PipelineEngine:
                     send_status(f"Task interrupted: {reason}")
                 break
             
-            # Get the next task
-            current_task = deconstructor_out.get("result", {}).get("next_task", {})
+            # ── Execute the chosen action ────────────────────────────────
+            action = result.get("action", "text")
             step_counter += 1
-            current_task["id"] = step_counter
-            
-            # ── 4. Worker + Retry loop ──────────────────────────────────
-            retry_count = 0
-            max_retries = 2
-            verification_feedback = ""
-            step_resolution = "failure"  # default until verified
             step_result_data = {}
             step_images = []
             
-            while retry_count < max_retries:
+            if action == "tool":
+                tool_name = result.get("tool_name")
+                arguments = result.get("arguments", {})
                 if send_status:
-                    send_status(f"Executing step {step_counter}: {current_task.get('description', 'Unknown')}")
+                    send_status(f"Executing tool {tool_name}...")
                 
-                worker_payload = self._clean_payload({
-                    "current_task": current_task,
-                    "tasks_history": tasks_history,
-                    "tools": tools,
-                    "abilities": abilities,
-                    "verification_feedback": verification_feedback,
+                tool_result = self.execute_tool(tool_name, arguments)
+                
+                step_result_data = {
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "result": tool_result,
+                }
+                
+                # Detect generated images from tool result
+                try:
+                    parsed_result = tool_result if isinstance(tool_result, dict) else json.loads(tool_result) if isinstance(tool_result, str) and tool_result.strip().startswith("{") else {}
+                    if parsed_result.get("image_hash"):
+                        step_images.append(parsed_result["image_hash"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                
+            elif action == "ask_user":
+                # ── SUSPEND PIPELINE: ask_user ──────────────────────────
+                raw_question = result.get("message", "I need more information to proceed.")
+                
+                # Style the question through Formatter
+                formatter_payload = self._clean_payload({
+                    "input": user_input_with_context,
+                    "raw_answer": raw_question,
+                    "task_summary": task_summary,
+                    "history": history_records,
+                    "memory": memories,
+                    "identity": identity,
+                    "language": language,
+                    "input_images": input_images,
+                    "media": [],
+                    "system_time": system_time,
+                    "execution_trace": execution_trace,
                 })
-                worker_out = self.worker.run(worker_payload)
-                self.log_step("Worker", worker_payload, worker_out)
+                formatter_out = self.formatter.run(formatter_payload)
+                self.log_step("Formatter_AskUser", formatter_payload, formatter_out)
+                styled_question = formatter_out.get("result", {}).get("final_user_message", raw_question)
                 
-                worker_ans = worker_out.get("result", {})
-                action = worker_ans.get("action")
-                status = worker_ans.get("status", "success")
+                # Save pipeline state for resumption
+                self._suspended_state = {
+                    "task_summary": task_summary,
+                    "tasks_history": tasks_history,
+                    "collected_images": collected_images,
+                    "step_counter": step_counter,
+                    "abilities": abilities,
+                    "tools": tools,
+                    "identity": identity,
+                    "language": language,
+                    "memories": memories,
+                    "user_input_with_context": user_input_with_context,
+                    "input_images": input_images,
+                    "relevant_skills": relevant_skills,
+                }
                 
-                step_images = worker_ans.get("media", [])
-                if not isinstance(step_images, list):
-                    step_images = []
+                return {"type": "ask_user", "text": styled_question, "images": []}
                 
-                if action == "tool":
-                    tool_name = worker_ans.get("tool_name")
-                    arguments = worker_ans.get("arguments", {})
-                    if send_status:
-                        send_status(f"Executing tool {tool_name}...")
-                    
-                    tool_result = self.execute_tool(tool_name, arguments)
-                    
-                    step_result_data = {
-                        "tool": tool_name,
-                        "arguments": arguments,
-                        "result": tool_result,
-                    }
-                    
-                    # Detect generated images from tool result
-                    try:
-                        parsed_result = tool_result if isinstance(tool_result, dict) else json.loads(tool_result) if isinstance(tool_result, str) and tool_result.strip().startswith("{") else {}
-                        if parsed_result.get("image_hash"):
-                            step_images.append(parsed_result["image_hash"])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                    
-                elif action == "ask_user":
-                    # ── SUSPEND PIPELINE: ask_user ──────────────────────
-                    raw_question = worker_ans.get("message", "I need more information to proceed.")
-                    
-                    # Style the question through Formatter
-                    formatter_payload = self._clean_payload({
-                        "input": user_input_with_context,
-                        "raw_answer": raw_question,
-                        "task_summary": task_summary,
-                        "history": history_records,
-                        "memory": memories,
-                        "identity": identity,
-                        "language": language,
-                        "input_images": input_images,
-                        "media": [],
-                        "system_time": system_time,
-                        "execution_trace": execution_trace,
-                    })
-                    formatter_out = self.formatter.run(formatter_payload)
-                    self.log_step("Formatter_AskUser", formatter_payload, formatter_out)
-                    styled_question = formatter_out.get("result", {}).get("final_user_message", raw_question)
-                    
-                    # Save pipeline state for resumption
-                    self._suspended_state = {
-                        "task_summary": task_summary,
-                        "tasks_history": tasks_history,
-                        "collected_images": collected_images,
-                        "step_counter": step_counter,
-                        "current_task": current_task,
-                        "abilities": abilities,
-                        "tools": tools,
-                        "identity": identity,
-                        "language": language,
-                        "memories": memories,
-                        "user_input_with_context": user_input_with_context,
-                        "input_images": input_images,
-                        "relevant_skills": relevant_skills,
-                    }
-                    
-                    return {"type": "ask_user", "text": styled_question, "images": []}
-                    
-                elif action == "text":
-                    step_result_data = {
-                        "action": "text",
-                        "result": worker_ans.get("message", ""),
-                    }
-                    
-                elif action == "interrupt":
-                    step_result_data = {
-                        "action": "interrupt",
-                        "result": worker_ans.get("answer", "task_unexecutable"),
-                    }
-                    
-                elif action == "summarize_history_range":
-                    entry_ids = worker_ans.get("entry_ids", [])
-                    summary_text = worker_ans.get("summary", "(no summary provided)")
-                    
-                    # Remove all targeted entries
-                    removed = [e for e in tasks_history if e["id"] in entry_ids]
-                    tasks_history[:] = [e for e in tasks_history if e["id"] not in entry_ids]
-                    
-                    # Insert a single summary entry in their place (use smallest removed id)
-                    insert_id = min((e["id"] for e in removed), default=step_counter)
-                    summary_entry = {
-                        "id": insert_id,
-                        "description": "[summarized history]",
-                        "resolution": "success",
-                        "result": {
-                            "action": "summarize_history_range",
-                            "summary": summary_text,
-                            "replaced_ids": entry_ids
-                        },
-                        "feedback": "",
-                        "media": [],
-                    }
-                    tasks_history.insert(
-                        next((i for i, e in enumerate(tasks_history) if e["id"] > insert_id), len(tasks_history)),
-                        summary_entry
-                    )
-                    
-                    step_result_data = {
+            elif action == "text":
+                step_result_data = {
+                    "action": "text",
+                    "result": result.get("message", ""),
+                }
+                
+            elif action == "interrupt":
+                step_result_data = {
+                    "action": "interrupt",
+                    "result": result.get("answer", "task_unexecutable"),
+                }
+                
+            elif action == "summarize_history_range":
+                entry_ids = result.get("entry_ids", [])
+                summary_text = result.get("summary", "(no summary provided)")
+                
+                # Remove all targeted entries
+                removed = [e for e in tasks_history if e["id"] in entry_ids]
+                tasks_history[:] = [e for e in tasks_history if e["id"] not in entry_ids]
+                
+                # Insert a single summary entry in their place
+                insert_id = min((e["id"] for e in removed), default=step_counter)
+                summary_entry = {
+                    "id": insert_id,
+                    "description": "[summarized history]",
+                    "resolution": "success",
+                    "result": {
                         "action": "summarize_history_range",
                         "summary": summary_text,
                         "replaced_ids": entry_ids
-                    }
+                    },
+                    "feedback": "",
+                    "media": [],
+                }
+                tasks_history.insert(
+                    next((i for i, e in enumerate(tasks_history) if e["id"] > insert_id), len(tasks_history)),
+                    summary_entry
+                )
                 
-                # ── 5. Verifier ─────────────────────────────────────────
-                if send_status:
-                    send_status("Verifying step result...")
-                
-                verifier_payload = self._clean_payload({
-                    "task": current_task,
-                    "worker_output": worker_ans,
-                    "answer": step_result_data,
-                    "images": step_images,
-                    "identity": identity,
-                })
-                verifier_out = self.verifier.run(verifier_payload)
-                self.log_step("Verifier", verifier_payload, verifier_out)
-                
-                resolution = verifier_out.get("result", {}).get("resolution", "failure")
-                
-                if resolution == "success":
-                    step_resolution = "success"
-                    verification_feedback = verifier_out.get("notes", "")
-                    break
-                elif resolution == "interrupt":
-                    step_resolution = "interrupt"
-                    verification_feedback = verifier_out.get("notes", "")
-                    break
-                elif resolution == "violation":
-                    step_resolution = "violation"
-                    step_result_data["result"] = "[REMOVED: identity violation]"
-                    verification_feedback = verifier_out.get("notes", "Identity violation.")
-                    break
-                else:
-                    # failure — retry
-                    retry_count += 1
-                    verification_feedback = verifier_out.get("notes", "Verification failed.")
-                    if send_status:
-                        send_status(f"Step failed verification (attempt {retry_count}/{max_retries}). Retrying...")
+                step_result_data = {
+                    "action": "summarize_history_range",
+                    "summary": summary_text,
+                    "replaced_ids": entry_ids
+                }
+            
+            # ── Verifier ─────────────────────────────────────────────────
+            if send_status:
+                send_status("Verifying action result...")
+            
+            verifier_payload = self._clean_payload({
+                "task": {"id": step_counter, "description": result.get("notes", "")},
+                "worker_output": result,
+                "answer": step_result_data,
+                "images": step_images,
+                "identity": verifier_identity,
+            })
+            verifier_out = self.verifier.run(verifier_payload)
+            self.log_step("Verifier", verifier_payload, verifier_out)
+            
+            resolution = verifier_out.get("result", {}).get("resolution", "failure")
+            verification_feedback = verifier_out.get("notes", "")
+            
+            if resolution == "violation":
+                step_result_data["result"] = "[REMOVED: identity violation]"
+            
+            step_resolution = resolution
             
             if step_resolution == "failure":
                 result_str = str(step_result_data.get("result", ""))
                 if len(result_str) > 1000:
-                    step_result_data["result"] = result_str[:1000] + "\n... [TRUNCATED to preserve context space]"
+                    step_result_data["result"] = result_str[:1000] + "\n... [TRUNCATED]"
 
-            # ── Append to tasks_history ─────────────────────────────────
+            # ── Append to tasks_history ───────────────────────────────────
             history_entry = {
                 "id": step_counter,
-                "description": current_task.get("description", ""),
+                "description": result.get("notes", action),
                 "resolution": step_resolution,
                 "result": step_result_data,
                 "feedback": verification_feedback,
-                # Only keep images from successful steps
                 "media": step_images if step_resolution == "success" else [],
             }
             tasks_history.append(history_entry)
@@ -563,11 +532,15 @@ class PipelineEngine:
             # Collect images only from successful steps
             if step_resolution == "success" and step_images:
                 collected_images.extend(step_images)
+            
+            # Reset feedback on success (Executor only sees feedback on failure)
+            if step_resolution == "success":
+                verification_feedback = ""
                 
             # Add step to execution trace manager
             if execution_trace_manager:
-                trace_args = worker_ans.get("arguments", {}) if action == "tool" else {"message": worker_ans.get("message", worker_ans.get("answer", ""))}
-                tool_name = worker_ans.get("tool_name") if action == "tool" else None
+                trace_args = result.get("arguments", {}) if action == "tool" else {"message": result.get("message", result.get("answer", ""))}
+                tool_name = result.get("tool_name") if action == "tool" else None
                 execution_trace_manager.add_step(action=action, args=trace_args, status=step_resolution, tool_name=tool_name)
         
         else:

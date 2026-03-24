@@ -93,3 +93,24 @@ class IdentityMCP(MCPServer):
             for c in self.identity["constraints"]:
                  prompt += f"  - {c}\n"
         return prompt
+
+    def verifier_identity_prompt(self):
+        """Returns only psychological_profile + constraints for Verifier (no style info)."""
+        prompt = ""
+        psy_profile = self.identity.get("psychological_profile", {})
+        if psy_profile:
+            prompt += "Psychological Profile:\n"
+            if psy_profile.get("personal_traits"):
+                prompt += f"  Traits: {', '.join(psy_profile['personal_traits'])}\n"
+            if psy_profile.get("affinities"):
+                prompt += f"  Affinities: {psy_profile['affinities']}\n"
+            if psy_profile.get("aversions"):
+                prompt += f"  Aversions: {psy_profile['aversions']}\n"
+            if psy_profile.get("principles"):
+                prompt += f"  Principles: {psy_profile['principles']}\n"
+        if self.identity.get("constraints"):
+            prompt += "Constraints:\n"
+            for c in self.identity["constraints"]:
+                prompt += f"  - {c}\n"
+        return prompt
+
