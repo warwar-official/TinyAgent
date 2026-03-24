@@ -265,16 +265,6 @@ class PipelineEngine:
         current_task = state["current_task"]
         current_task["user_response"] = user_response
         
-        # Append the ask_user step and the user's response to tasks_history
-        state["tasks_history"].append({
-            "id": state["step_counter"],
-            "description": current_task.get("description", ""),
-            "resolution": "success",
-            "result": {"action": "ask_user", "result": f"Asked user, received: {user_response}"},
-            "feedback": "",
-            "media": [],
-        })
-        
         if send_status:
             send_status("Continuing task with your response...")
 
@@ -346,6 +336,7 @@ class PipelineEngine:
                 "task_summary": task_summary,
                 "abilities": abilities,
                 "tasks_history": tasks_history,
+                "history": history_records,
                 "media": collected_images,
                 "relevant_skills": relevant_skills,
             })
@@ -380,7 +371,7 @@ class PipelineEngine:
             
             # ── 4. Worker + Retry loop ──────────────────────────────────
             retry_count = 0
-            max_retries = 1
+            max_retries = 2
             verification_feedback = ""
             step_resolution = "failure"  # default until verified
             step_result_data = {}
@@ -483,12 +474,37 @@ class PipelineEngine:
                         "result": worker_ans.get("answer", "task_unexecutable"),
                     }
                     
-                elif action == "delete_history_entry":
+                elif action == "summarize_history_range":
                     entry_ids = worker_ans.get("entry_ids", [])
-                    tasks_history = [t for t in tasks_history if t["id"] not in entry_ids]
+                    summary_text = worker_ans.get("summary", "(no summary provided)")
+                    
+                    # Remove all targeted entries
+                    removed = [e for e in tasks_history if e["id"] in entry_ids]
+                    tasks_history[:] = [e for e in tasks_history if e["id"] not in entry_ids]
+                    
+                    # Insert a single summary entry in their place (use smallest removed id)
+                    insert_id = min((e["id"] for e in removed), default=step_counter)
+                    summary_entry = {
+                        "id": insert_id,
+                        "description": "[summarized history]",
+                        "resolution": "success",
+                        "result": {
+                            "action": "summarize_history_range",
+                            "summary": summary_text,
+                            "replaced_ids": entry_ids
+                        },
+                        "feedback": "",
+                        "media": [],
+                    }
+                    tasks_history.insert(
+                        next((i for i, e in enumerate(tasks_history) if e["id"] > insert_id), len(tasks_history)),
+                        summary_entry
+                    )
+                    
                     step_result_data = {
-                        "action": "delete_history_entry",
-                        "result": f"Deleted entries {entry_ids}"
+                        "action": "summarize_history_range",
+                        "summary": summary_text,
+                        "replaced_ids": entry_ids
                     }
                 
                 # ── 5. Verifier ─────────────────────────────────────────

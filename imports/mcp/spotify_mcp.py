@@ -82,6 +82,12 @@ class SpotifyMCP(MCPServer):
             
         return False
 
+    def _get_id_from_uri(self, uri_or_id: str) -> str:
+        """Extracts the ID from a Spotify URI (e.g., 'spotify:playlist:XYZ' -> 'XYZ') or returns the ID as is."""
+        if isinstance(uri_or_id, str) and uri_or_id.startswith("spotify:"):
+            return uri_or_id.split(":")[-1]
+        return uri_or_id
+
     def _make_request(self, method: str, endpoint: str, params: dict | None = None, json_data: dict | None = None) -> dict:
         if not self.access_token:
             # Try to load just in case
@@ -103,7 +109,7 @@ class SpotifyMCP(MCPServer):
                     return {"status": "error", "message": "Unauthorized or token expired"}
                 
                 if response.status_code == 403:
-                    return {"status": "error", "message": "Forbidden. Possibly no active device or premium required."}
+                    return {"status": "error", "message": "Forbidden. Check your scopes (playlist-modify-public/private) or if the account is premium for playback control."}
                 
                 if response.status_code == 404:
                     return {"status": "error", "message": "Resource not found or invalid ID."}
@@ -229,7 +235,7 @@ class SpotifyMCP(MCPServer):
             })
             
         elif name == "add_to_playlist":
-            playlist_id = args.get("playlist_id")
+            playlist_id = self._get_id_from_uri(args.get("playlist_id"))
             # Accept both a single track_uri (string) and track_uris (list)
             track_uris = args.get("track_uris") or args.get("uris")
             if not track_uris:
@@ -250,7 +256,7 @@ class SpotifyMCP(MCPServer):
             return {"status": "success", "message": f"Added {len(track_uris)} track(s) to playlist."}
             
         elif name == "remove_from_playlist":
-            playlist_id = args.get("playlist_id")
+            playlist_id = self._get_id_from_uri(args.get("playlist_id"))
             track_uris = args.get("track_uris") or args.get("uris")
             if not track_uris:
                 single = args.get("track_uri")
@@ -276,13 +282,13 @@ class SpotifyMCP(MCPServer):
             return {"status": "success", "message": f"Removed {len(track_uris)} track(s) from playlist."}
             
         elif name == "get_playlist":
-            playlist_id = args.get("playlist_id")
+            playlist_id = self._get_id_from_uri(args.get("playlist_id"))
             res = self._make_request("GET", f"/playlists/{playlist_id}")
             if res.get("status") == "success" and res.get("data"):
                 data = res["data"]
                 items = []
-                for track_item in data.get("tracks", {}).get("items", []):
-                    track = track_item.get("track")
+                for track_item in data.get("items", []).get("items", []):
+                    track = track_item.get("item")
                     if not track:
                         continue
                     artists = ", ".join([a.get("name", "") for a in track.get("artists", [])])
@@ -298,7 +304,7 @@ class SpotifyMCP(MCPServer):
                         "name": data.get("name"),
                         "owner.display_name": data.get("owner", {}).get("display_name"),
                         "owner.uri": data.get("owner", {}).get("uri"),
-                        "total_tracks": data.get("tracks", {}).get("total", 0),
+                        "total_tracks": data.get("items", {}).get("total", 0),
                         "items": items
                     }
                 }
@@ -351,7 +357,7 @@ class SpotifyMCP(MCPServer):
             return self._make_request("GET", "/me/player/devices")
             
         elif name == "set_playback_device":
-            device_id = args.get("device_id")
+            device_id = self._get_id_from_uri(args.get("device_id"))
             return self._make_request("PUT", "/me/player", json_data={"device_ids": [device_id]})
             
         elif name == "get_lyrics":

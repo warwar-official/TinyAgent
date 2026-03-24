@@ -7,7 +7,7 @@ import os
 import time
 from imports.history_manager import HistoryRecord
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 
 @dataclass
@@ -201,9 +201,12 @@ class ProvidersManager:
                 elif structure == "openai-compatible" and "response_format" in rendered_payload:
                     del rendered_payload["response_format"]
 
+            # Normalize payload to fix nested stringified JSON (prevent double escaping)
+            normalized_payload = self._normalize_payload(rendered_payload)
+
             req = urllib.request.Request(
                 request_url, 
-                data=json.dumps(rendered_payload, ensure_ascii=False).encode('utf-8'), 
+                data=json.dumps(normalized_payload, ensure_ascii=False).encode('utf-8'), 
                 headers=headers, 
                 method='POST'
             )
@@ -234,3 +237,25 @@ class ProvidersManager:
         cleaned_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL)
         # Also clean up any leading/trailing whitespace left by the removal
         return cleaned_text.strip()
+
+    def _normalize_json_string(self, value: Any) -> Any:
+        """Attempts to parse a string as JSON. If successful, returns the parsed object."""
+        if isinstance(value, str):
+            trimmed = value.strip()
+            # Basic check for JSON-like structure
+            if (trimmed.startswith("{") and trimmed.endswith("}")) or \
+               (trimmed.startswith("[") and trimmed.endswith("]")):
+                try:
+                    return json.loads(trimmed)
+                except:
+                    return value
+        return value
+
+    def _normalize_payload(self, obj: Any) -> Any:
+        """Recursively parses any stringified JSON within a data structure."""
+        if isinstance(obj, dict):
+            return {k: self._normalize_payload(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._normalize_payload(v) for v in obj]
+        else:
+            return self._normalize_json_string(obj)

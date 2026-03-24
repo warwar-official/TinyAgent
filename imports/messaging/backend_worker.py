@@ -86,9 +86,9 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                         answer = pipeline_result.get("text", "I need more information.")
                         images = pipeline_result.get("images", [])
                         
-                        # Add the ask_user question to history as model's message
+                        # Add the ask_user question to history as assistant's message
                         if request.action == "message":
-                            history_manager.add_dialog_record("model", answer, image_hashes=images)
+                            history_manager.add_dialog_record("assistant", answer, image_hashes=images)
                         
                         # Send as final_response (the user will reply, and pipeline will resume)
                         bus.send_to_frontend(AgentResponse(
@@ -107,7 +107,7 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                 
                 # Update dialogue history with final answer and generated images
                 if request.action == "message":
-                    history_manager.add_dialog_record("model", answer, image_hashes=images)
+                    history_manager.add_dialog_record("assistant", answer, image_hashes=images)
                 history_manager.clear_task_history()
 
             except Exception as e:

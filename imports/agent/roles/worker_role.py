@@ -20,7 +20,7 @@ class WorkerRole(AIRole):
         
         Worker does NOT have access to: identity, history, memory, tasks_history.
         
-        Returns: {"result": {"action": "tool"|"text"|"ask_user"|"interrupt", "status": "success"|"interrupt", "answer": str, "media": list[str], ...}}
+        Returns: {"result": {"action": "tool"|"text"|"ask_user"|"summarize_history_range"|"interrupt", "status": "success"|"interrupt", "answer": str, "summary": str, "entry_ids": list, ...}}
         """
         SYSTEM_PROMPT = self.engine.mcp_connector.generate_prompt("worker_role_prompt", {}) if self.engine.mcp_connector else ""
         current_task = payload.get("current_task", {})
