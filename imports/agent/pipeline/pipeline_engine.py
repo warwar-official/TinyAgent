@@ -164,7 +164,7 @@ class PipelineEngine:
         
         now = datetime.datetime.now()
         system_time = now.strftime("%H:%M %a %d %B %Y")
-        execution_trace = execution_trace_manager.get_trace() if execution_trace_manager else {}
+        execution_trace = execution_trace_manager.get_markdown_trace() if execution_trace_manager else ""
         
         # ── 2. Router ───────────────────────────────────────────────────
         # Receives: input, history, identity, memory, input_images
@@ -322,7 +322,7 @@ class PipelineEngine:
         
         now = datetime.datetime.now()
         system_time = now.strftime("%H:%M %a %d %B %Y")
-        execution_trace = execution_trace_manager.get_trace() if execution_trace_manager else {}
+        execution_trace = execution_trace_manager.get_markdown_trace() if execution_trace_manager else ""
         
         if execution_trace_manager:
             execution_trace_manager.start_task(task_summary)
@@ -551,7 +551,8 @@ class PipelineEngine:
             # Add step to execution trace manager
             if execution_trace_manager:
                 trace_args = worker_ans.get("arguments", {}) if action == "tool" else {"message": worker_ans.get("message", worker_ans.get("answer", ""))}
-                execution_trace_manager.add_step(action=action, args=trace_args, status=step_resolution)
+                tool_name = worker_ans.get("tool_name") if action == "tool" else None
+                execution_trace_manager.add_step(action=action, args=trace_args, status=step_resolution, tool_name=tool_name)
         
         else:
             # Loop exhausted MAX_ITERATIONS

@@ -11,8 +11,8 @@ class PersonalityFormatterRole(AIRole):
         """
         Formatter role: formats the final response for the user.
         
-        Task mode payload: {"raw_answer": str, "input": str, "history": list, "memory": list, "identity": str, "language": str, "media": list, "input_images": list, "system_time": str, "execution_trace": dict}
-        Conversation mode payload: {"input": str, "history": list, "memory": list, "identity": str, "language": str, "media": list, "input_images": list, "system_time": str, "execution_trace": dict}
+        Task mode payload: {"raw_answer": str, "input": str, "history": list, "memory": list, "identity": str, "language": str, "media": list, "input_images": list, "system_time": str, "execution_trace": str}
+        Conversation mode payload: {"input": str, "history": list, "memory": list, "identity": str, "language": str, "media": list, "input_images": list, "system_time": str, "execution_trace": str}
         
         Formatter does NOT have access to: tools, tasks, abilities.
         
@@ -28,14 +28,14 @@ class PersonalityFormatterRole(AIRole):
         media = payload.get("media", [])
         input_images = payload.get("input_images", [])
         system_time = payload.get("system_time", "")
-        execution_trace = payload.get("execution_trace", {})
+        execution_trace = payload.get("execution_trace", "")
         
         #history_text = "\n".join([f"{r.role}: {r.message}" for r in history])
         
         user_prompt = f"Agent Persona / Identity: {identity}\n"
         user_prompt += f"System Time: {system_time}\n"
-        if execution_trace and execution_trace.get("tasks"):
-            user_prompt += f"Recent Tasks Traces (for context on what was just done):\n{json.dumps(execution_trace, ensure_ascii=False, indent=2)}\n\n"
+        if execution_trace and execution_trace != "No recent tasks.":
+            user_prompt += f"{execution_trace}\n\n"
         #user_prompt += f"Recent Conversation History:\n{history_text}\n\n"
         if memory:
             user_prompt += f"Relevant Memories:\n{json.dumps(memory, ensure_ascii=False)}\n\n"

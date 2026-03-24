@@ -277,7 +277,32 @@ class SpotifyMCP(MCPServer):
             
         elif name == "get_playlist":
             playlist_id = args.get("playlist_id")
-            return self._make_request("GET", f"/playlists/{playlist_id}")
+            res = self._make_request("GET", f"/playlists/{playlist_id}")
+            if res.get("status") == "success" and res.get("data"):
+                data = res["data"]
+                items = []
+                for track_item in data.get("tracks", {}).get("items", []):
+                    track = track_item.get("track")
+                    if not track:
+                        continue
+                    artists = ", ".join([a.get("name", "") for a in track.get("artists", [])])
+                    items.append({
+                        "uri": track.get("uri"),
+                        "name": track.get("name"),
+                        "artist": artists
+                    })
+                return {
+                    "status": "success",
+                    "data": {
+                        "uri": data.get("uri"),
+                        "name": data.get("name"),
+                        "owner.display_name": data.get("owner", {}).get("display_name"),
+                        "owner.uri": data.get("owner", {}).get("uri"),
+                        "total_tracks": data.get("tracks", {}).get("total", 0),
+                        "items": items
+                    }
+                }
+            return res
             
         elif name == "get_user_playlists":
             limit = args.get("limit", 50)
@@ -290,14 +315,18 @@ class SpotifyMCP(MCPServer):
                     if not pl:
                         continue
                     playlists.append({
-                        "id": pl.get("id"),
-                        "name": pl.get("name"),
-                        "description": pl.get("description", ""),
-                        "tracks_count": pl.get("tracks", {}).get("total", 0),
-                        "owner": pl.get("owner", {}).get("display_name", ""),
                         "uri": pl.get("uri"),
+                        "name": pl.get("name"),
+                        "owner.display_name": pl.get("owner", {}).get("display_name", ""),
+                        "owner.uri": pl.get("owner", {}).get("uri", "")
                     })
-                return {"status": "success", "data": playlists, "total": res["data"].get("total", 0)}
+                return {
+                    "status": "success", 
+                    "data": {
+                        "total": res["data"].get("total", 0),
+                        "items": playlists
+                    }
+                }
             return res
             
         elif name == "get_playback_state":
