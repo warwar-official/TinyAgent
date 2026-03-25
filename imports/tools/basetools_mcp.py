@@ -127,8 +127,8 @@ class BaseToolsMCP(MCPServer):
         query = query.replace("\"", "").replace("\\"," ").replace("'", " ")
         tool_answer = {"tool_name": "web_search", "tool_arguments": {"query": query, "count": count}, "tool_result": None, "truncate": False, "error": None}
         
-        if count > 5:
-            count = 5
+        count = min(count,7)
+        count = max(count,3) 
         headers = {
             "Accept": "application/json",
             "X-Subscription-Token": TOKEN
