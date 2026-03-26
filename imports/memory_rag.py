@@ -1,8 +1,7 @@
 from imports.providers_manager import ProvidersManager, Model
 from imports.history_manager import HistoryRecord
 from qdrant_client import QdrantClient, models
-from fastembed import TextEmbedding
-from fastembed.common.model_description import PoolingType, ModelSource
+from imports.embedding_service import EmbeddingService
 import json
 import time
 import os
@@ -41,38 +40,10 @@ class MemoryRAG:
         os.makedirs(db_path, exist_ok=True)
         os.makedirs(models_cache_path, exist_ok=True)
 
-        # Initialize fastembed with custom model configuration (mean pooling, fp32)
-        custom_model_name = f"{emb_model_name}-custom"
-        
-        try:
-            # Find the model in fastembed's list to preserve the correct sources, dim, and additional_files
-            supported = next((m for m in TextEmbedding.list_supported_models() if m["model"] == emb_model_name), None)
-            if supported:
-                TextEmbedding.add_custom_model(
-                    model=custom_model_name,
-                    pooling=PoolingType.MEAN,
-                    normalization=True,
-                    sources=ModelSource(**supported["sources"]),
-                    dim=supported["dim"],
-                    model_file="model.onnx",
-                    additional_files=supported.get("additional_files")
-                )
-            else:
-                # Fallback
-                TextEmbedding.add_custom_model(
-                    model=custom_model_name,
-                    pooling=PoolingType.MEAN,
-                    normalization=True,
-                    sources=ModelSource(hf=emb_model_name),
-                    dim=1024,
-                    model_file="model.onnx"
-                )
-        except ValueError:
-            pass # Already registered
-
-        self.embedding_model = TextEmbedding(
-            model_name=custom_model_name,
-            cache_dir=models_cache_path
+        # Initialize EmbeddingService (creates singleton if not exists)
+        self.embedding_service = EmbeddingService.get_instance(
+            emb_model_name=emb_model_name,
+            models_cache_path=models_cache_path
         )
 
         # Initialize Qdrant in on-disk local mode
@@ -101,7 +72,7 @@ class MemoryRAG:
                          {"type": "fact", "source": "autonomous"}
         """
         query_filter = self._build_filter(filters) if filters else None
-        query_vector = list(self.embedding_model.embed([query]))[0].tolist()
+        query_vector = self.embedding_service.embed_single(query)
 
         results = self.client.query_points(
             collection_name=COLLECTION_NAME,
@@ -149,7 +120,7 @@ class MemoryRAG:
             memory_type: Category of the memory (e.g. "fact", "result", "error").
             context: Situational background.
         """
-        vector = list(self.embedding_model.embed([memory]))[0].tolist()
+        vector = self.embedding_service.embed_single(memory)
 
         # Check for near-duplicates
         existing = self.client.query_points(
@@ -177,7 +148,7 @@ class MemoryRAG:
                     merged_text = self.providers_manager.generation_request(
                         self.merge_model, [history_record]
                     ).strip()
-                    merged_vector = list(self.embedding_model.embed([merged_text]))[0].tolist()
+                    merged_vector = self.embedding_service.embed_single(merged_text)
                 except Exception as e:
                     print(f"Error during memory merge: {e}")
                     return
@@ -243,8 +214,7 @@ class MemoryRAG:
         collections = [c.name for c in self.client.get_collections().collections]
         
         # Get vector size from the embedding model
-        sample_vec = list(self.embedding_model.embed(["test"]))[0]
-        vector_size = len(sample_vec)
+        vector_size = self.embedding_service.get_vector_size()
             
         if COLLECTION_NAME not in collections:
             self.client.create_collection(
@@ -275,7 +245,7 @@ class MemoryRAG:
 
     def add_archived_message(self, user_msg: str, model_msg: str) -> None:
         text = f"User: {user_msg}\nModel: {model_msg}"
-        vector = list(self.embedding_model.embed([text]))[0].tolist()
+        vector = self.embedding_service.embed_single(text)
         point_id = str(uuid.uuid4())
         payload = {
             "user": user_msg,
@@ -288,7 +258,7 @@ class MemoryRAG:
         )
 
     def search_archived_messages(self, query: str, limit: int = 2) -> list[dict]:
-        query_vector = list(self.embedding_model.embed([query]))[0].tolist()
+        query_vector = self.embedding_service.embed_single(query)
         results = self.client.query_points(
             collection_name=ARCHIVED_COLLECTION_NAME,
             query=query_vector,
@@ -307,7 +277,7 @@ class MemoryRAG:
         if not signature:
             return
             
-        vector = list(self.embedding_model.embed([signature]))[0].tolist()
+        vector = self.embedding_service.embed_single(signature)
 
         # Check for near-duplicates
         existing = self.client.query_points(
@@ -374,7 +344,7 @@ class MemoryRAG:
 
     def search_skills(self, query: str, limit: int = 3, similarity_threshold: float = 0.75) -> list[dict]:
         """Search skills by semantic similarity."""
-        query_vector = list(self.embedding_model.embed([query]))[0].tolist()
+        query_vector = self.embedding_service.embed_single(query)
         results = self.client.query_points(
             collection_name=SKILLS_COLLECTION_NAME,
             query=query_vector,

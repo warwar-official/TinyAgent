@@ -45,6 +45,29 @@ class MemoryRetrievalRole(AIRole):
                     memories = res["results"]
             except Exception as e:
                 parsed["notes"] = f"Memory search failed: {e}"
+                
+            # Search Knowledge Base RAG
+            try:
+                from imports.embedding_service import EmbeddingService
+                from imports.knowledge_base_rag import KnowledgeBaseRAG
+                app_config = self.engine.config
+                if app_config and app_config.get("context", {}).get("memory", {}).get("active", False):
+                    mem_cfg = app_config["context"]["memory"]
+                    emb_service = EmbeddingService.get_instance(
+                        emb_model_name=mem_cfg.get("emb_model_name", "intfloat/multilingual-e5-large"),
+                        models_cache_path=mem_cfg.get("models_cache_path", "./data/memory/models/")
+                    )
+                    kb_rag = KnowledgeBaseRAG.get_instance(
+                        db_path=mem_cfg.get("db_path", "./data/memory/db/"),
+                        embedding_service=emb_service
+                    )
+                    kb_results = kb_rag.search(query, top_k=3)
+                    for kr in kb_results:
+                        text = kr.get("text", "")
+                        if text:
+                            memories.append(f"[KnowledgeBase (score={kr.get('score', 0):.2f})] {text}")
+            except Exception as e:
+                print(f"KBRAG Search failed: {e}")
         
         parsed["result"]["memories"] = memories
         return parsed

@@ -4,15 +4,29 @@ import base64
 import requests
 from typing import Any
 from imports.mcp.base import MCPServer
+from imports.embedding_service import EmbeddingService
+from imports.knowledge_base_rag import KnowledgeBaseRAG
 
 class SpotifyMCP(MCPServer):
-    def __init__(self, secrets_path: str = "./data/spotify_secrets.json"):
+    def __init__(self, secrets_path: str = "./data/spotify_secrets.json", app_config: dict = None):
         super().__init__()
         self.secrets_path = secrets_path
         self.access_token: str | None = None
         self.refresh_token: str | None = None
         self.client_id: str | None = None
         self.client_secret: str | None = None
+        
+        self.kb_rag = None
+        if app_config and app_config.get("context", {}).get("memory", {}).get("active", False):
+            mem_cfg = app_config["context"]["memory"]
+            emb_service = EmbeddingService.get_instance(
+                emb_model_name=mem_cfg.get("emb_model_name", "intfloat/multilingual-e5-large"),
+                models_cache_path=mem_cfg.get("models_cache_path", "./data/memory/models/")
+            )
+            self.kb_rag = KnowledgeBaseRAG.get_instance(
+                db_path=mem_cfg.get("db_path", "./data/memory/db/"),
+                embedding_service=emb_service
+            )
         
         self._load_tokens()
 
@@ -367,7 +381,18 @@ class SpotifyMCP(MCPServer):
                 # lyrics.ovh API
                 response = requests.get(f"https://api.lyrics.ovh/v1/{artist}/{track_name}", timeout=10)
                 if response.status_code == 200:
-                    return {"status": "success", "data": {"lyrics": response.json().get("lyrics")}}
+                    lyrics_text = response.json().get("lyrics", "")
+                    try:
+                        if self.kb_rag and lyrics_text:
+                            self.kb_rag.add_document(
+                                text=lyrics_text,
+                                url=f"spotify:track:{artist}:{track_name}",
+                                title=f"{artist} - {track_name}"
+                            )
+                    except Exception as e:
+                        print(f"Failed to ingest Lyrics into KBRAG: {e}")
+                        
+                    return {"status": "success", "data": {"lyrics": lyrics_text}}
                 return {"status": "error", "message": f"Lyrics not found. Status: {response.status_code}"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}

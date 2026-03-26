@@ -7,7 +7,8 @@ from html.parser import HTMLParser
 import uuid
 from typing import Any
 from imports.mcp.base import MCPServer
-
+from imports.embedding_service import EmbeddingService
+from imports.knowledge_base_rag import KnowledgeBaseRAG
 class PageContentParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -56,8 +57,19 @@ class PageContentParser(HTMLParser):
 class BaseToolsMCP(MCPServer):
     """MCP server that manages the base agent tools directly without dynamic loading."""
     
-    def __init__(self) -> None:
-        pass
+    def __init__(self, app_config: dict = None) -> None:
+        super().__init__()
+        self.kb_rag = None
+        if app_config and app_config.get("context", {}).get("memory", {}).get("active", False):
+            mem_cfg = app_config["context"]["memory"]
+            emb_service = EmbeddingService.get_instance(
+                emb_model_name=mem_cfg.get("emb_model_name", "intfloat/multilingual-e5-large"),
+                models_cache_path=mem_cfg.get("models_cache_path", "./data/memory/models/")
+            )
+            self.kb_rag = KnowledgeBaseRAG.get_instance(
+                db_path=mem_cfg.get("db_path", "./data/memory/db/"),
+                embedding_service=emb_service
+            )
 
     def _rpc_tool_execute(self, params: dict) -> Any:
         name: str = params["name"]
@@ -292,6 +304,22 @@ class BaseToolsMCP(MCPServer):
             except Exception:
                 pass
                 
+            try:
+                if self.kb_rag and transcript:
+                    full_text = []
+                    for t in transcript:
+                        if isinstance(t, dict) and "text" in t:
+                            full_text.append(t["text"])
+                    if full_text:
+                        merged_transcript = " ".join(full_text)
+                        self.kb_rag.add_document(
+                            text=merged_transcript,
+                            url=url,
+                            title=f"{video_info.get('author')} - {video_info.get('name')}"
+                        )
+            except Exception as e:
+                print(f"Failed to ingest YouTube transcript into KBRAG: {e}")
+
             return tool_answer
 
         except Exception as e:

@@ -3,7 +3,7 @@
         {
             "name": "prompt_builder",
             "type": "local_class",
-            "class": "imports.tools.prompt_builder_mcp.PromptBuilderMCP",
+            "class": "imports.mcp.prompt_builder_mcp.PromptBuilderMCP",
             "init_params": {},
             "inject_app_config": true,
             "tools": [],
@@ -90,8 +90,9 @@
         {
             "name": "base_tools",
             "type": "local_class",
-            "class": "imports.tools.basetools_mcp.BaseToolsMCP",
+            "class": "imports.mcp.basetools_mcp.BaseToolsMCP",
             "init_params": {},
+            "inject_app_config": true,
             "tools": [
                 {
                     "name": "fetch_weather",
@@ -308,6 +309,7 @@
             "init_params": {
                 "secrets_path": "./data/spotify_secrets.json"
             },
+            "inject_app_config": true,
             "tools": [
                 {
                     "name": "playback_control",

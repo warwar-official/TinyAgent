@@ -56,7 +56,7 @@ class ExecutionTraceManager:
         
         # Format timestamp with time, day number, and month name
         now = datetime.datetime.now()
-        timestamp = now.strftime("%H:%M %B %d")
+        timestamp = now.strftime("%H:%M %d %B")
         
         step_id = f"step_{len(current_task_block['steps']) + 1:02d}"
         

@@ -145,7 +145,7 @@ class PipelineEngine:
                 if isinstance(res, dict) and "results" in res:
                     archived_pairs = res["results"]
                     if archived_pairs:
-                        archived_context = "Recent relevant past interactions:\n"
+                        archived_context = "Past conversations (use carefully, it may be outdated):\n"
                         for i, pair in enumerate(archived_pairs, 1):
                             archived_context += f"{i}. user: {pair.get('user', '')}\n   model: {pair.get('model', '')}\n\n"
             except Exception as e:
@@ -156,7 +156,7 @@ class PipelineEngine:
             user_input_with_context += f"\n\n{archived_context}"
 
         # Gather shared resources
-        history_records = history_manager.get_dialog_records() #count=5)
+        history_records = history_manager.get_dialog_records()
         identity = self.mcp_connector.get_identity_prompt() if self.mcp_connector else ""
         language = self.mcp_connector.get_language() if hasattr(self.mcp_connector, "get_language") else "English"
         
@@ -212,7 +212,7 @@ class PipelineEngine:
         
         # ── TASK PATH ───────────────────────────────────────────────────
         
-        MAX_ITERATIONS = 90
+        MAX_ITERATIONS = 30
         abilities = self.mcp_connector.get_all_abilities() if self.mcp_connector else []
         tools = self.mcp_connector.get_available_tools() if self.mcp_connector else []
         tasks_history = []
@@ -289,7 +289,7 @@ class PipelineEngine:
             history_manager=history_manager,
             execution_trace_manager=execution_trace_manager,
             send_status=send_status,
-            max_iterations=90,
+            max_iterations=30,
         )
 
     def _execute_task_loop(
@@ -310,7 +310,7 @@ class PipelineEngine:
         history_manager,
         execution_trace_manager=None,
         send_status: Optional[Callable[[str], None]] = None,
-        max_iterations: int = 90,
+        max_iterations: int = 30,
     ) -> dict:
         """Core task execution loop using the unified Executor role."""
         
@@ -631,12 +631,12 @@ class PipelineEngine:
         # Build the prompt array 
         records = []
         
+        # Add system prompt as the FIRST message
+        records.append(HistoryRecord("system", system_prompt))
+
         # Prepend the existing history from the particular context (task or dialog)
         if history_records:
             records.extend(history_records)
-
-        # Add system prompt
-        records.append(HistoryRecord("system", system_prompt))
             
         # Append the current step's user prompt to the end
         records.append(HistoryRecord("user", user_prompt))

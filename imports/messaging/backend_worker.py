@@ -16,12 +16,14 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
             
             # Helper function to inject into PipelineEngine for intermediate status updates
             def send_status(msg: str) -> None:
-                bus.send_to_frontend(AgentResponse(
-                    frontend_type=request.frontend_type,
-                    chat_id=request.chat_id,
-                    type="status_update",
-                    text=msg
-                ))
+                import os
+                if os.getenv("DEBUG", "False").lower() == "true":
+                    bus.send_to_frontend(AgentResponse(
+                        frontend_type=request.frontend_type,
+                        chat_id=request.chat_id,
+                        type="status_update",
+                        text=msg
+                    ))
 
             # Process image if present in the text (sent by telegram plugin)
             if request.text.startswith("[IMAGE_URL_ATTACHED]:"):
@@ -86,9 +88,9 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                         answer = pipeline_result.get("text", "I need more information.")
                         images = pipeline_result.get("images", [])
                         
-                        # Add the ask_user question to history as assistant's message
+                        # Add the ask_user question to history as model's message
                         if request.action == "message":
-                            history_manager.add_dialog_record("assistant", answer, image_hashes=images)
+                            history_manager.add_dialog_record("model", answer, image_hashes=images)
                         
                         # Send as final_response (the user will reply, and pipeline will resume)
                         bus.send_to_frontend(AgentResponse(
@@ -107,7 +109,7 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                 
                 # Update dialogue history with final answer and generated images
                 if request.action == "message":
-                    history_manager.add_dialog_record("assistant", answer, image_hashes=images)
+                    history_manager.add_dialog_record("model", answer, image_hashes=images)
                 history_manager.clear_task_history()
 
             except Exception as e:
@@ -137,7 +139,7 @@ def backend_worker_loop(bus: MessageBus, pipeline_engine: PipelineEngine, histor
                         # 2. Memory Creation
                         mem_payload = {"history": history_manager.get_dialog_records()}
                         m_out = pipeline_engine.memory_creation.run(mem_payload)
-                        if m_out and m_out.get("create_memory"):
+                        if m_out:
                             pipeline_engine.log_step("MemoryCreation", mem_payload, m_out)
                     except Exception as e:
                         traceback.print_exc()

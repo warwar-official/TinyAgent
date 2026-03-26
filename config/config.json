@@ -18,16 +18,18 @@
     ],
     "agent": {
         "model": {
-            "model_id": "gemma-3-27b-it",
-            "provider": "gemini",
-            "api_key_name": "GEMINI_API_KEY",
-            "vision_enabled": true
+            "model_id": "mistral-medium-latest",
+            "provider": "mistral",
+            "api_key_name": "MISTRAL_API_KEY",
+            "vision_enabled": true,
+            "response_format": "json"
         },
         "summary_model": {
-            "model_id": "gemma-3-27b-it",
-            "provider": "gemini",
-            "api_key_name": "GEMINI_API_KEY",
-            "vision_enabled": true
+            "model_id": "mistral-medium-latest",
+            "provider": "mistral",
+            "api_key_name": "MISTRAL_API_KEY",
+            "vision_enabled": true,
+            "response_format": "json"
         }
     },
     "context": {

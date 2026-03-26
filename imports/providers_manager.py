@@ -68,9 +68,15 @@ class ProvidersManager:
     ) -> dict:
         messages = []
         for record in payload:
-            role = "user" if record.role.lower() in ["user", "human"] else "assistant"
-            if record.role.lower() == "system":
+            raw_role = record.role.lower()
+            if raw_role in ["user", "human"]:
+                role = "user"
+            elif raw_role == "system":
                 role = "system"
+            elif raw_role == "tool":
+                role = "tool"
+            else:
+                role = "assistant" # Covers "model", "assistant", and unknowns
 
             message_text = record.message
             if record.role.lower() == "user":
@@ -236,6 +242,10 @@ class ProvidersManager:
         # Strip <think>...</think> block anywhere in the output
         cleaned_text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL)
         # Also clean up any leading/trailing whitespace left by the removal
+        
+        # QoL: Artificial delay to prevent rate-limiting (RPS control)
+        time.sleep(1.5)
+        
         return cleaned_text.strip()
 
     def _normalize_json_string(self, value: Any) -> Any:

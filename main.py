@@ -5,7 +5,7 @@ from imports.image_manager import ImageManager
 from imports.history_manager import HistoryManager
 from imports.execution_trace import ExecutionTraceManager
 from prompt_toolkit import PromptSession
-from imports.plugins.telegram import bot_process, stop_bot
+from imports.messaging.telegram import bot_process, stop_bot
 from threading import Thread
 import json
 import time
@@ -59,7 +59,7 @@ def main():
     model = Model(**config.get("agent", {}).get("model", {}))
     
     # Init MCP connector
-    mcp_config_path = config.get("context", {}).get("mcp_config_path", "./tools/mcp_config.json")
+    mcp_config_path = config.get("context", {}).get("mcp_config_path", "config/mcp_config.json")
     try:
         with open(mcp_config_path, "r", encoding="utf-8") as f:
             mcp_config_data = json.load(f)
