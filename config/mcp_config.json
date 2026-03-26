@@ -122,8 +122,8 @@
                                 "type": "integer",
                                 "description": "The number of results to return.",
                                 "default": 3,
-                                "minimum": 1,
-                                "maximum": 5
+                                "minimum": 3,
+                                "maximum": 7
                             }
                         },
                         "required": [
