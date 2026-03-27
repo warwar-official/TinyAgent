@@ -110,20 +110,31 @@ class PromptMCP(MCPServer):
             
         lines = ["### Conversation History"]
         for i, entry in enumerate(history, 1):
-            role = entry.get("role", "user").capitalize()
-            message = entry.get("message", "")
-            time = entry.get("create_time", "")
+            if hasattr(entry, "to_dict"):
+                entry = entry.to_dict()
             
-            if role.lower() == "user" and time:
-                # Assuming time is in %Y-%m-%d %H:%M:%S format from HistoryRecord.to_dict()
-                try:
-                    dt = datetime.strptime(time, "%Y-%m-%d %H:%M:%S")
-                    time_str = dt.strftime("%H:%M | %a %-d %B")
-                    lines.append(f"{i}. **{role}:** [{time_str}] {message}")
-                except:
+            # If it's a dict
+            if isinstance(entry, dict):
+                role = entry.get("role", "user").capitalize()
+                message = entry.get("message", "")
+                time = entry.get("create_time", "")
+                
+                if role.lower() == "user" and time:
+                    try:
+                        # Handle potential datetime object or string
+                        if isinstance(time, str):
+                            dt = datetime.strptime(time, "%Y-%m-%d %H:%M:%S")
+                        else:
+                            dt = time
+                        time_str = dt.strftime("%H:%M | %a %-d %B")
+                        lines.append(f"{i}. **{role}:** [{time_str}] {message}")
+                    except:
+                        lines.append(f"{i}. **{role}:** {message}")
+                else:
                     lines.append(f"{i}. **{role}:** {message}")
             else:
-                lines.append(f"{i}. **{role}:** {message}")
+                lines.append(f"{i}. **Entry:** {str(entry)}")
+        
         return "\n".join(lines) + "\n"
 
     def format_user_input(self, args: dict) -> str:
