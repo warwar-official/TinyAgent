@@ -51,7 +51,7 @@ class MemoryCreationRole(AIRole):
                 
                 if content:
                     try:
-                        self.engine.mcp_connector.execute_tool("save_memory", {
+                        self.engine.mcp_connector.execute_tool("memory.save_memory", {
                             "content": content,
                             "context": context,
                             "source": "conversation",

@@ -50,7 +50,7 @@ class SummaryRole(AIRole):
                     elif rec.role == "model" and user_msg:
                         if self.engine.mcp_connector:
                             try:
-                                self.engine.mcp_connector.execute_tool("save_archived_message", {
+                                self.engine.mcp_connector.execute_tool("memory.save_archived_message", {
                                     "user_msg": user_msg,
                                     "model_msg": rec.message
                                 })

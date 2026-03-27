@@ -196,7 +196,7 @@ class SpotifyMCP(MCPServer):
             if res2.get("status") == "error": return res2
             return {"status": "success", "message": "Playback mode updated"}
             
-        elif name == "spotify_search":
+        elif name == "search":
             query = args.get("query", "")
             limit = args.get("limit", 5)
             types_list = args.get("type", ["track"])

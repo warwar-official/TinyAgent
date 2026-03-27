@@ -40,7 +40,7 @@ class MemoryRetrievalRole(AIRole):
         memories = []
         if action == "search" and query and self.engine.mcp_connector:
             try:
-                res = self.engine.mcp_connector.execute_tool("search_memory", {"query": query, "limit": 5})
+                res = self.engine.mcp_connector.execute_tool("memory.search_memory", {"query": query, "limit": 5})
                 if isinstance(res, dict) and "results" in res:
                     memories = res["results"]
             except Exception as e:

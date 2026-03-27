@@ -85,15 +85,20 @@ class MCPConnector:
             server_abilities = [a for a in server_cfg.get("abilities", []) if a.strip()]
             self._server_abilities[server_name] = server_abilities
             
+            mcp_namespace = server_cfg.get("mcp_name")
+
             # Tools
             for tool in server_cfg.get("tools", []):
-                name = tool.get("name")
-                if name:
-                    self._tool_registry[name] = server_instance
+                original_name = tool.get("name")
+                if original_name:
+                    full_name = f"{mcp_namespace}.{original_name}" if mcp_namespace else original_name
+                    tool["name"] = full_name  # modify schema object
+                    
+                    self._tool_registry[full_name] = server_instance
                     self._tool_schemas.append(tool)
-                    self._tool_to_server_name[name] = server_name
+                    self._tool_to_server_name[full_name] = server_name
                     if "timeout" in tool:
-                        self._tool_timeouts[name] = int(tool["timeout"])
+                        self._tool_timeouts[full_name] = int(tool["timeout"])
             
             # Prompts
             for prompt in server_cfg.get("prompts", []):
@@ -136,9 +141,12 @@ class MCPConnector:
         
         # Per-tool timeout takes priority over the argument default
         effective_timeout = self._tool_timeouts.get(name, timeout_seconds if timeout_seconds is not None else 30)
+        
+        # Strip mcp_name for the internal server call
+        internal_name = name.split(".", 1)[-1] if "." in name else name
             
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(server.handle_rpc, "tool_execute", {"name": name, "arguments": arguments})
+            future = executor.submit(server.handle_rpc, "tool_execute", {"name": internal_name, "arguments": arguments})
             try:
                 return future.result(timeout=effective_timeout)
             except concurrent.futures.TimeoutError:

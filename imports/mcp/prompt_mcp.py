@@ -2,7 +2,7 @@ from imports.mcp.base import MCPServer
 from datetime import datetime
 import json
 
-class PromptBuilderMCP(MCPServer):
+class PromptMCP(MCPServer):
     """MCP server that generates all system prompts."""
 
     def __init__(self, app_config: dict = None) -> None:
@@ -15,7 +15,7 @@ class PromptBuilderMCP(MCPServer):
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"PromptBuilderMCP: Failed to read prompts from {path}: {e}")
+            print(f"PromptMCP: Failed to read prompts from {path}: {e}")
             return {}
 
     def _rpc_prompt_generate(self, params: dict) -> str:

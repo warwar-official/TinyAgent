@@ -2,8 +2,9 @@
     "servers": [
         {
             "name": "prompt_builder",
+            "mcp_name": "prompt",
             "type": "local_class",
-            "class": "imports.mcp.prompt_builder_mcp.PromptBuilderMCP",
+            "class": "imports.mcp.prompt_mcp.PromptMCP",
             "init_params": {},
             "inject_app_config": true,
             "tools": [],
@@ -88,14 +89,15 @@
             "abilities": []
         },
         {
-            "name": "base_tools",
+            "name": "web_tools",
+            "mcp_name": "web",
             "type": "local_class",
-            "class": "imports.mcp.basetools_mcp.BaseToolsMCP",
+            "class": "imports.mcp.web_tools_mcp.WebToolsMCP",
             "init_params": {},
             "inject_app_config": true,
             "tools": [
                 {
-                    "name": "fetch_weather",
+                    "name": "weather",
                     "description": "Gets the current weather and forecast for a specific city. Use this when the user asks about weather conditions.",
                     "parameters": {
                         "properties": {
@@ -110,7 +112,7 @@
                     }
                 },
                 {
-                    "name": "web_search",
+                    "name": "search",
                     "description": "Searches the web for a given query.",
                     "parameters": {
                         "properties": {
@@ -132,7 +134,7 @@
                     }
                 },
                 {
-                    "name": "web_fetch",
+                    "name": "fetch",
                     "description": "Fetches the content of internet souces by URL. Returns clean text, links, and table data. It is not rendering images or scripts.",
                     "parameters": {
                         "properties": {
@@ -141,13 +143,25 @@
                                 "description": "The URL to fetch content from."
                             }
                         },
-                        "required": [
-                            "url"
-                        ]
+                        "required": []
                     }
-                },
+                }
+            ],
+            "prompts": [],
+            "abilities": [
+                "# WEB SKILLS\n\n## 1. Weather Skills\n* **Step 1:** Use web.weather to get current weather in given location.\n* **Step 2:** web.weather tool return only current weather in given location, to get information to another date use web searching approach.\n\n## 2. Web Browsing Skills\n* **Step 1:** Make a meaningul search query.\n* **Step 2:** Request more answers.\n* **Step 3:** Assess Snippets First: After using web.search, read the provided snippets. If they contain the complete answer to the user's query, STOP and provide the answer.\n* **Step 4:** Deep Dive: If the snippets are insufficient, use web.fetch on the most promising URL from the search results to read the full content.\n* **Step 5:** Handling Scraper Blocks: If web.fetch returns an empty result, an error, or asks for CAPTCHA, it means the site is blocking automated access. DO NOT retry the same URL. Immediately try web.fetch on the next relevant URL.\n* **Step 6:** Smart Retry: Do not retry same things same way everytime. If web.search or web.fetch doesn't return correct result, change arguments."
+            ]
+        },
+        {
+            "name": "youtube_tools",
+            "mcp_name": "youtube",
+            "type": "local_class",
+            "class": "imports.mcp.youtube_mcp.YoutubeMCP",
+            "init_params": {},
+            "inject_app_config": true,
+            "tools": [
                 {
-                    "name": "get_youtube_transcript",
+                    "name": "get_transcript",
                     "description": "Fetches transcript for a YouTube video. Provide the video URL.",
                     "parameters": {
                         "properties": {
@@ -160,15 +174,100 @@
                             "url"
                         ]
                     }
+                },
+                {
+                    "name": "search",
+                    "description": "Searches YouTube for videos, channels, or playlists.",
+                    "parameters": {
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The query to search for"
+                            },
+                            "type": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": [
+                                        "video",
+                                        "channel",
+                                        "playlist"
+                                    ]
+                                },
+                                "description": "Type of resource to search for. Leaving empty defaults to all."
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "The number of results to return.",
+                                "default": 5,
+                                "maximum": 20
+                            }
+                        },
+                        "required": [
+                            "query"
+                        ]
+                    }
+                },
+                {
+                    "name": "get_video_info",
+                    "description": "Gets detailed clean information about a YouTube video.",
+                    "parameters": {
+                        "properties": {
+                            "videoId": {
+                                "type": "string",
+                                "description": "The YouTube video ID."
+                            }
+                        },
+                        "required": [
+                            "videoId"
+                        ]
+                    }
+                },
+                {
+                    "name": "get_channel",
+                    "description": "Gets basic info about a YouTube channel, including its uploads playlist ID.",
+                    "parameters": {
+                        "properties": {
+                            "channelId": {
+                                "type": "string",
+                                "description": "The YouTube channel ID."
+                            }
+                        },
+                        "required": [
+                            "channelId"
+                        ]
+                    }
+                },
+                {
+                    "name": "get_playlist",
+                    "description": "Gets the list of videos inside a YouTube playlist.",
+                    "parameters": {
+                        "properties": {
+                            "playlistId": {
+                                "type": "string",
+                                "description": "The YouTube playlist ID."
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Number of videos to return.",
+                                "default": 10,
+                                "maximum": 50
+                            }
+                        },
+                        "required": [
+                            "playlistId"
+                        ]
+                    }
                 }
             ],
             "prompts": [],
             "abilities": [
-                "# WEB SKILLS\n\n## 1. Weather Skills\n* **Step 1:** Use fetch_weather to get current weather in given location.\n* **Step 2:** fetch_weather tool return only current weather in given location, to get information to another date use web searching approach.\n\n## 2. Web Browsing Skills\n* **Step 1:** Make a meainigful search query.\n* **Step 2:** Request more answers.\n* **Step 3:** Assess Snippets First: After using web_search, read the provided snippets. If they contain the complete answer to the user's query, STOP and provide the answer.\n* **Step 4:** Deep Dive: If the snippets are insufficient, use web_fetch on the most promising URL from the search results to read the full content.\n* **Step 5:** Handling Scraper Blocks: If web_fetch returns an empty result, an error, or asks for CAPTCHA, it means the site is blocking automated access. DO NOT retry the same URL. Immediately try web_fetch on the next relevant URL.\n* **Step 6:** Smart Retry: Do not retry same things same way everytime. If web_search or web_fetch dosen't return correct result, change arguments.\n\n## 3. YouTube Skills\nTo fetch data from video you MUST:\n* **Step 1:** Find youtube link for this video. \n* **Step 2:** Use get_youtube_transcript tool with this video url.\n**IMPORTANT** This tool works ONLY with YouTube."
+                "## 3. YouTube Skills\n* To search YouTube use `youtube.search`.\n* To get details of a specific video use `youtube.get_video_info`.\n* To understand a channel or get their video list, use `youtube.get_channel` to find the channel and its `uploads_playlist_id`, then fetch its videos using `youtube.get_playlist`.\n* To fetch the transcript of a video, find the video ID and pass `https://youtube.com/watch?v=<videoId>` to `youtube.get_transcript`.\n* **NOTE:** Never invent video IDs, only use real IDs retrieved through search."
             ]
         },
         {
             "name": "identity",
+            "mcp_name": "identity",
             "type": "local_class",
             "class": "imports.mcp.identity_mcp.IdentityMCP",
             "init_params": {
@@ -180,6 +279,7 @@
         },
         {
             "name": "memory",
+            "mcp_name": "memory",
             "type": "local_class",
             "class": "imports.mcp.memory_mcp.MemoryMCP",
             "inject_app_config": true,
@@ -304,6 +404,7 @@
         },
         {
             "name": "spotify",
+            "mcp_name": "spotify",
             "type": "local_class",
             "class": "imports.mcp.spotify_mcp.SpotifyMCP",
             "init_params": {
@@ -371,7 +472,7 @@
                     }
                 },
                 {
-                    "name": "spotify_search",
+                    "name": "search",
                     "description": "Search for tracks, albums, artists, or playlists in Spotify.",
                     "parameters": {
                         "properties": {

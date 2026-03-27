@@ -141,7 +141,7 @@ class PipelineEngine:
         archived_context = ""
         if self.mcp_connector:
             try:
-                res = self.mcp_connector.execute_tool("search_archived_messages", {"query": user_input, "limit": 2})
+                res = self.mcp_connector.execute_tool("memory.search_archived_messages", {"query": user_input, "limit": 2})
                 if isinstance(res, dict) and "results" in res:
                     archived_pairs = res["results"]
                     if archived_pairs:
@@ -223,7 +223,7 @@ class PipelineEngine:
         relevant_skills = []
         if self.mcp_connector:
             try:
-                skill_res = self.mcp_connector.execute_tool("search_skills", {"query": task_summary, "limit": 3})
+                skill_res = self.mcp_connector.execute_tool("memory.search_skills", {"query": task_summary, "limit": 3})
                 if isinstance(skill_res, dict) and "results" in skill_res:
                     relevant_skills = skill_res["results"]
                     if relevant_skills:
@@ -570,8 +570,8 @@ class PipelineEngine:
             
             if skill_out.get("result", {}).get("save_skill", False):
                 skill_data = skill_out.get("result", {}).get("skill", {})
-                if skill_data and self.mcp_connector:
-                    self.mcp_connector.execute_tool("save_skill", {"skill_data": skill_data})
+                if skill_data:
+                    self.mcp_connector.execute_tool("memory.save_skill", {"skill_data": skill_data})
                     print(f"[DEBUG] Skill saved: {skill_data.get('task_signature', 'unknown')}")
         except Exception as e:
             print(f"[DEBUG] SkillBuilder error: {e}")
