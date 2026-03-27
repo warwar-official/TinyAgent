@@ -84,6 +84,34 @@
                 {
                     "name": "executor_role_prompt",
                     "description": "Prompt for the Executor role."
+                },
+                {
+                    "name": "format_identity",
+                    "description": "Formats the agent identity section."
+                },
+                {
+                    "name": "format_execution_trace",
+                    "description": "Formats the execution trace section."
+                },
+                {
+                    "name": "format_system_state",
+                    "description": "Formats the system state section (time)."
+                },
+                {
+                    "name": "format_memory",
+                    "description": "Formats retrieved memories."
+                },
+                {
+                    "name": "format_history",
+                    "description": "Formats conversation history with timestamps."
+                },
+                {
+                    "name": "format_user_input",
+                    "description": "Formats the final user input."
+                },
+                {
+                    "name": "format_payload",
+                    "description": "Standardizes the entire payload hierarchy."
                 }
             ],
             "abilities": []
