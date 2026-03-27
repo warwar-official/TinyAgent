@@ -23,7 +23,15 @@ class KnowledgeBaseRAG:
         if cls._instance is None:
             if not db_path or not embedding_service:
                 raise ValueError("KnowledgeBaseRAG must be initialized with arguments first.")
-            cls._instance = cls(db_path, embedding_service)
+            
+            import os
+            # Prevent Qdrant lock collisions by using a separate directory
+            # e.g., turn "./data/memory/db/" into "./data/memory/kbrag_db/"
+            base_dir = os.path.dirname(db_path.rstrip("/\\"))
+            kb_db_path = os.path.join(base_dir, "kbrag_db") if base_dir else "./data/memory/kbrag_db"
+            os.makedirs(kb_db_path, exist_ok=True)
+            
+            cls._instance = cls(kb_db_path, embedding_service)
         return cls._instance
     
     def __init__(self, db_path: str, embedding_service: EmbeddingService):

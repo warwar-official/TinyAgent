@@ -342,7 +342,7 @@ class MemoryRAG:
             )]
         )
 
-    def search_skills(self, query: str, limit: int = 3, similarity_threshold: float = 0.75) -> list[dict]:
+    def search_skills(self, query: str, limit: int = 3, similarity_threshold: float = 0.8) -> list[dict]:
         """Search skills by semantic similarity."""
         query_vector = self.embedding_service.embed_single(query)
         results = self.client.query_points(
