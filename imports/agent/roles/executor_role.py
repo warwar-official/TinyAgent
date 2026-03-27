@@ -37,31 +37,45 @@ class ExecutorRole(AIRole):
         relevant_skills = payload.get("relevant_skills", [])
         verification_feedback = payload.get("verification_feedback", "")
 
-        tools_text = json.dumps(tools, ensure_ascii=False)
-
-        user_prompt = f"Task Summary: {task_summary}\n\n"
+        user_prompt = f"### Task Context\n**Task Summary:** {task_summary}\n"
 
         if abilities:
-            user_prompt += f"Available Abilities:\n{abilities}\n\n"
+            user_prompt += f"### Your Abilities\n{abilities}\n"
 
-        user_prompt += f"Available Tools:\n{tools_text}\n\n"
+        if tools:
+            user_prompt += f"### Available Tools\n{json.dumps(tools, ensure_ascii=False)}\n"
 
         if relevant_skills:
-            user_prompt += f"Relevant Skills from past executions (use as reference):\n{json.dumps(relevant_skills, indent=2, ensure_ascii=False)}\n\n"
+            user_prompt += f"### Relevant Skills (Reference Only)\n"
+            for i, skill in enumerate(relevant_skills, 1):
+                user_prompt += f"{i}. **Skill:** {skill.get('task_signature', 'Unknown')}\n"
+            user_prompt += "\n"
 
         if tasks_history:
-            user_prompt += f"Recent steps (last {len(tasks_history)}):\n{json.dumps(tasks_history, indent=2, ensure_ascii=False)}\n\n"
+            user_prompt += f"### Recent Execution Steps (Last {len(tasks_history)})\n"
+            for i, entry in enumerate(tasks_history, 1):
+                desc = entry.get("description", "No description")
+                res = entry.get("resolution", "unknown")
+                result_data = entry.get("result", {})
+                user_prompt += f"{i}. **Action:** {desc}\n   → Status: {res}\n"
+                if result_data:
+                    # Truncate result data if it's too long
+                    res_str = json.dumps(result_data, ensure_ascii=False)
+                    if len(res_str) > 500:
+                        res_str = res_str[:500] + "... [TRUNCATED]"
+                    user_prompt += f"   → Result: {res_str}\n"
+            user_prompt += "\n"
 
         if media:
-            user_prompt += f"Available media from previous steps: {json.dumps(media, ensure_ascii=False)}\n\n"
+            user_prompt += f"**Available Media:** {json.dumps(media, ensure_ascii=False)}\n"
 
         if verification_feedback:
-            user_prompt += f"Feedback from Verifier on your previous action: {verification_feedback}\n\n"
+            user_prompt += f"### Verifier Feedback\n{verification_feedback}\n"
 
         if tasks_history and len(tasks_history) > 8:
-            user_prompt += "[SYSTEM NOTICE]: tasks_history is getting long. Consider using summarize_history_range to clean it up.\n"
+            user_prompt += "> [!IMPORTANT]\n> `tasks_history` is getting long. Consider using `summarize_history_range` to clean it up.\n"
 
-        user_prompt += "Analyze the current state and choose ONE action, or conclude the task."
+        user_prompt += "\nAnalyze the current state and choose ONE action, or conclude the task."
 
         response_text = self.engine.generate_response(
             role=self,

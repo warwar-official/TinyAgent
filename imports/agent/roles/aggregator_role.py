@@ -25,10 +25,24 @@ class AggregatorRole(AIRole):
         for entry in tasks_history:
             images.extend(entry.get("media", []))
         
-        user_prompt = f"User Task Summary: {task_summary}\n\n"
-        user_prompt += f"Completed Steps History:\n{json.dumps(tasks_history, indent=2, ensure_ascii=False)}\n"
+        # Build structured history for aggregator
+        history_lines = ["### Completed Steps History"]
+        for i, entry in enumerate(tasks_history, 1):
+            desc = entry.get("description", "No description")
+            res = entry.get("resolution", "unknown")
+            result_data = entry.get("result", {})
+            
+            history_lines.append(f"{i}. **Action:** {desc}")
+            history_lines.append(f"   **Status:** {res}")
+            if result_data:
+                history_lines.append(f"   **Result:** {json.dumps(result_data, ensure_ascii=False)}")
+        
+        user_prompt = f"**User Task Summary:** {task_summary}\n\n"
+        user_prompt += "\n".join(history_lines) + "\n\n"
+        
         if images:
-            user_prompt += f"Generated images: {json.dumps(images, ensure_ascii=False)}\n"
+            user_prompt += f"**Generated images:** {json.dumps(images, ensure_ascii=False)}\n"
+        
         user_prompt += "Please aggregate the findings and provide the definitive final answer. If any steps failed or were interrupted, mention this and explain the impact."
 
         response_text = self.engine.generate_response(

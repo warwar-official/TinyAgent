@@ -27,25 +27,25 @@ class VerifierRole(AIRole):
         if not current_step:
             return {"notes": "No current step to verify.", "result": {"resolution": "success"}}
             
-        user_prompt = f"Step description: {json.dumps(current_step, ensure_ascii=False)}\n"
+        user_prompt = f"### Step Context\n**Step Description:** {json.dumps(current_step, ensure_ascii=False)}\n"
         
         if worker_output:
-            user_prompt += f"Worker Output: {json.dumps(worker_output, ensure_ascii=False)}\n"
+            user_prompt += f"### Worker Decision\n{json.dumps(worker_output, ensure_ascii=False)}\n"
             status = worker_output.get("status", "success")
             if status == "interrupt":
-                user_prompt += "The worker interrupted this task because it is unexecutable. Evaluate if this is a valid reason for interruption.\n"
+                user_prompt += "> [!IMPORTANT]\n> The worker interrupted this task because it is unexecutable. Evaluate if this is a valid reason for interruption.\n"
         
         if answer:
-            user_prompt += f"Execution Results to verify: {json.dumps(answer, ensure_ascii=False)}\n"
+            user_prompt += f"### Execution Results\n{json.dumps(answer, ensure_ascii=False)}\n"
         else:
             if not worker_output:
-                user_prompt += "No tool output or text produced for this step yet.\n"
+                user_prompt += "> [!NOTE]\n> No tool output or text produced for this step yet.\n"
         
         if images:
-            user_prompt += f"Generated images in this step: {json.dumps(images, ensure_ascii=False)}\n"
+            user_prompt += f"**Generated Images:** {json.dumps(images, ensure_ascii=False)}\n"
             
         if identity:
-            user_prompt += f"\nSystem Identity (Preferences/Aversions/Constraints):\n{identity}\n"
+            user_prompt += f"### System Identity (Constraints)\n{identity}\n"
 
         response_text = self.engine.generate_response(
             role=self,

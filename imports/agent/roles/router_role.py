@@ -10,34 +10,31 @@ class RouterRole(AIRole):
         """
         Router role: determines request type (conversation vs task).
         
-        Payload: {"input": str, "history": list, "identity": str, "memory": list, "input_images": list, "system_time": str, "execution_trace": str}
+        Payload: {"input": str, "history": list, "identity": str, "memory": list, "input_images": list, "system_time": str, "execution_trace": dict}
         Returns: {"result": {"type": "conversation" | "task"}}
         """
         SYSTEM_PROMPT = self.engine.mcp_connector.generate_prompt("router_role_prompt", {}) if self.engine.mcp_connector else ""
-        user_input = payload.get("input", "")
-        identity = payload.get("identity", "")
-        history = payload.get("history", [])
-        memory = payload.get("memory", [])
-        input_images = payload.get("input_images", [])
-        system_time = payload.get("system_time", "")
-        execution_trace = payload.get("execution_trace", "")
+        
+        # Use PromptMCP to format the payload
+        format_args = {
+            "identity": payload.get("identity", ""),
+            "trace": payload.get("execution_trace", {}),
+            "current_time": payload.get("system_time", ""),
+            "memories": payload.get("memory", []),
+            "history": payload.get("history", []),
+            "user_input": payload.get("input", "")
+        }
+        
+        user_prompt = self.engine.mcp_connector.generate_prompt("format_payload", format_args) if self.engine.mcp_connector else ""
+        if not user_prompt:
+            # Fallback if MCP fails
+            user_prompt = f"User Input: {payload.get('input', '')}"
 
-        #history_text = "\n".join([f"{r.role}: {r.message} , image: {r.image_hashes}" for r in history])
-        
-        user_prompt = f"Agent Identity / Rules:\n{identity}\n\n"
-        user_prompt += f"System Time: {system_time}\n"
-        if execution_trace and execution_trace != "No recent tasks.":
-            user_prompt += f"{execution_trace}\n\n"
-        #user_prompt += f"Recent Conversation History:\n{history_text}\n\n"
-        if memory:
-            user_prompt += f"Relevant Memories:\n{memory}\n\n"
-        user_prompt += f"User Input: {user_input}\n"
-        
         response_text = self.engine.generate_response(
             role=self,
             system_prompt=SYSTEM_PROMPT,
             user_prompt=user_prompt,
-            history_records=history,
-            input_images=input_images,
+            # history_records=payload.get("history", []), # We now include history in the user_prompt
+            input_images=payload.get("input_images", []),
         )
         return self.parse_json_response(response_text)

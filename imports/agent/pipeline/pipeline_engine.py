@@ -161,8 +161,8 @@ class PipelineEngine:
         language = self.mcp_connector.get_language() if hasattr(self.mcp_connector, "get_language") else "English"
         
         now = datetime.datetime.now()
-        system_time = now.strftime("%H:%M %a %d %B %Y")
-        execution_trace = execution_trace_manager.get_markdown_trace() if execution_trace_manager else ""
+        system_time = now.strftime("%H:%M | %a %-d %B")
+        execution_trace = execution_trace_manager.get_structured_trace() if execution_trace_manager else {}
         
         # ── 2. Router ───────────────────────────────────────────────────
         # Receives: input, history, identity, memory, input_images
@@ -315,8 +315,8 @@ class PipelineEngine:
         """Core task execution loop using the unified Executor role."""
         
         now = datetime.datetime.now()
-        system_time = now.strftime("%H:%M %a %d %B %Y")
-        execution_trace = execution_trace_manager.get_markdown_trace() if execution_trace_manager else ""
+        system_time = now.strftime("%H:%M | %a %-d %B")
+        execution_trace = execution_trace_manager.get_structured_trace() if execution_trace_manager else {}
         
         # Get trimmed identity for Verifier (only psychological_profile + constraints)
         verifier_identity = self.mcp_connector.get_verifier_identity_prompt() if self.mcp_connector else ""

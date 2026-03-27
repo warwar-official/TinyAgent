@@ -16,9 +16,8 @@ class WorkerRole(AIRole):
             "tools": list,
             "abilities": str,
             "verification_feedback": str,
+            "tasks_history": list,
         }
-        
-        Worker does NOT have access to: identity, history, memory, tasks_history.
         
         Returns: {"result": {"action": "tool"|"text"|"ask_user"|"summarize_history_range"|"interrupt", "status": "success"|"interrupt", "answer": str, "summary": str, "entry_ids": list, ...}}
         """
@@ -29,16 +28,24 @@ class WorkerRole(AIRole):
         tools = payload.get("tools", [])
         abilities = payload.get("abilities", "")
         
-        tools_text = json.dumps(tools, ensure_ascii=False)
+        user_prompt = f"### Current Step\n{json.dumps(current_task, ensure_ascii=False)}\n"
         
-        user_prompt = f"Current step: {json.dumps(current_task, ensure_ascii=False)}\n"
-        user_prompt += f"Available tools:\n{tools_text}\n"
+        if tools:
+            user_prompt += f"### Available Tools\n{json.dumps(tools, ensure_ascii=False)}\n"
+            
         if tasks_history:
-            user_prompt += f"Steps completed so far:\n{json.dumps(tasks_history, indent=2, ensure_ascii=False)}\n\n"
+            user_prompt += f"### Completed Steps History (Progress)\n"
+            for i, entry in enumerate(tasks_history, 1):
+                desc = entry.get("description", "No description")
+                res = entry.get("resolution", "unknown")
+                user_prompt += f"{i}. **Action:** {desc} → Status: {res}\n"
+            user_prompt += "\n"
+            
         if abilities:
-            user_prompt += f"Your abilities:\n{abilities}\n"
+            user_prompt += f"### Your Abilities\n{abilities}\n"
+            
         if feedback:
-            user_prompt += f"Feedback from Verifier on previous run: {feedback}\n"
+            user_prompt += f"### Verifier Feedback\n{feedback}\n"
             
         user_prompt += "\nIf the task is unexecutable (e.g. no tool for it, impossible constraints), use action 'interrupt', status 'interrupt' and return 'task_unexecutable' as answer."
 

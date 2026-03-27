@@ -48,35 +48,39 @@ class ExecutionTraceManager:
         # Check if the last task block is the current one
         if not self.trace["tasks"] or self.trace["tasks"][-1]["title"] != self._current_task_title:
             self.trace["tasks"].append({
-                "title": f"Task: {self._current_task_title}",
+                "title": self._current_task_title,
                 "steps": []
             })
             
         current_task_block = self.trace["tasks"][-1]
         
-        # Format timestamp with time, day number, and month name
+        # Format timestamp: HH:MM | Day Number Month
         now = datetime.datetime.now()
-        timestamp = now.strftime("%H:%M %d %B")
+        timestamp = now.strftime("%H:%M | %a %-d %B") # e.g., 14:32 | Fri 27 March
         
-        step_id = f"step_{len(current_task_block['steps']) + 1:02d}"
-        
-        # Clean/shorten args if needed (e.g., truncate very long strings)
+        # Determine type
+        step_type = "Tool" if action == "tool" else "Action"
+        if action == "system":
+            step_type = "System"
+            
+        # Clean/shorten args
         short_args = {}
         for k, v in args.items():
-            if isinstance(v, str) and len(v) > 100:
-                short_args[k] = v[:100] + "..."
+            if isinstance(v, str) and len(v) > 200:
+                short_args[k] = v[:200] + "..."
+            elif isinstance(v, (dict, list)):
+                # Just show that it's a complex object instead of full JSON
+                short_args[k] = f"<{type(v).__name__} object>"
             else:
                 short_args[k] = v
 
         new_step = {
-            "id": step_id,
-            "action": action,
-            "tool_name": tool_name,
+            "time": timestamp,
+            "type": step_type,
+            "name": tool_name if tool_name else action,
             "args": short_args,
-            "status": status,
-            "timestamp": timestamp
+            "status": status.capitalize() # Success / Failed / Pending
         }
-        
         
         current_task_block["steps"].append(new_step)
         self._step_count += 1
@@ -103,20 +107,6 @@ class ExecutionTraceManager:
         """Returns the execution trace as a dict."""
         return self.trace
 
-    def get_markdown_trace(self) -> str:
-        """Returns the execution trace as a Markdown string."""
-        if not self.trace.get("tasks"):
-            return "No recent tasks."
-            
-        lines = ["# Execution Trace"]
-        for task in self.trace["tasks"]:
-            lines.append(f"**{task['title']}**")
-            for step in task["steps"]:
-                action_str = step.get("action", "")
-                if step.get("tool_name"):
-                    action_str = step.get("tool_name")
-                
-                # Format: *step 01 - tool_name - success*
-                lines.append(f"*{step['id']} - {action_str} - {step.get('status', '')}*")
-            lines.append("") # empty line between tasks
-        return "\n".join(lines).strip()
+    def get_structured_trace(self) -> dict:
+        """Returns the structured execution trace for PromptMCP."""
+        return self.trace
