@@ -536,49 +536,10 @@ class PipelineEngine:
                 
                 return {"type": "ask_user", "text": styled_question, "images": []}
                 
-            elif action == "text":
-                step_result_data = {
-                    "action": "text",
-                    "result": result.get("message", ""),
-                }
-                
             elif action == "interrupt":
                 step_result_data = {
                     "action": "interrupt",
                     "result": result.get("answer", "task_unexecutable"),
-                }
-                
-            elif action == "summarize_history_range":
-                entry_ids = result.get("entry_ids", [])
-                summary_text = result.get("summary", "(no summary provided)")
-                
-                # Remove all targeted entries
-                removed = [e for e in tasks_history if e["id"] in entry_ids]
-                tasks_history[:] = [e for e in tasks_history if e["id"] not in entry_ids]
-                
-                # Insert a single summary entry in their place
-                insert_id = min((e["id"] for e in removed), default=step_counter)
-                summary_entry = {
-                    "id": insert_id,
-                    "description": "[summarized history]",
-                    "resolution": "success",
-                    "result": {
-                        "action": "summarize_history_range",
-                        "summary": summary_text,
-                        "replaced_ids": entry_ids
-                    },
-                    "feedback": "",
-                    "media": [],
-                }
-                tasks_history.insert(
-                    next((i for i, e in enumerate(tasks_history) if e["id"] > insert_id), len(tasks_history)),
-                    summary_entry
-                )
-                
-                step_result_data = {
-                    "action": "summarize_history_range",
-                    "summary": summary_text,
-                    "replaced_ids": entry_ids
                 }
             
             # ── Verifier ─────────────────────────────────────────────────
