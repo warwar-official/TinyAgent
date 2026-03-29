@@ -110,6 +110,10 @@
                     "description": "Formats the final user input."
                 },
                 {
+                    "name": "history_compressor_role_prompt",
+                    "description": "Prompt for the History Compressor role."
+                },
+                {
                     "name": "format_payload",
                     "description": "Standardizes the entire payload hierarchy."
                 },

@@ -470,10 +470,21 @@ class PipelineEngine:
             # ── Execute the chosen action ────────────────────────────────
             action = result.get("action", "text")
             step_counter += 1
-            step_result_data = {}
             step_images = []
             
-            if action == "tool":
+            if action == "analyze":
+                analysis_query = result.get("message", "Analyze the current data.")
+                if send_status:
+                    send_status("Executor performing internal analysis...")
+                
+                # The 'notes' from the executor response effectively contain the analysis
+                step_result_data = {
+                    "action": "analyze",
+                    "analysis": result.get("notes", ""),
+                    "goal": analysis_query
+                }
+                
+            elif action == "tool":
                 tool_name = result.get("tool_name")
                 arguments = result.get("arguments", {})
                 if send_status:
