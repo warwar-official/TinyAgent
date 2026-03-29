@@ -154,6 +154,7 @@ class PipelineEngine:
                 if truncation_limit > 0 and len(transformed_content_str) > truncation_limit:
                     transformed_content_str = transformed_content_str[:truncation_limit] + "\n... [TRUNCATED]"
                     result_dict["truncate"] = True
+                    print(truncation_limit)
 
                 # Update the result_dict with the transformed content
                 if result_dict["summarized"] or result_dict.get("truncate", False):
@@ -429,15 +430,12 @@ class PipelineEngine:
             if send_status:
                 send_status("Executor analyzing next action...")
             
-            # Limit tasks_history to last 5 entries for Executor
-            recent_history = tasks_history[-5:] if len(tasks_history) > 5 else tasks_history
-            
             executor_payload = self._clean_payload({
                 "user_input": user_input,
                 "kb_knowledge": kb_knowledge,
                 "abilities": abilities,
                 "tools": tools,
-                "tasks_history": recent_history,
+                "tasks_history": tasks_history,
                 "media": collected_images,
                 "relevant_skills": relevant_skills,
                 "verification_feedback": verification_feedback,
@@ -480,8 +478,7 @@ class PipelineEngine:
                 # The 'notes' from the executor response effectively contain the analysis
                 step_result_data = {
                     "action": "analyze",
-                    "analysis": result.get("notes", ""),
-                    "goal": analysis_query
+                    "result": result.get("analyze", ""),
                 }
                 
             elif action == "tool":
