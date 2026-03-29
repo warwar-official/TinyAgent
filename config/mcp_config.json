@@ -112,6 +112,10 @@
                 {
                     "name": "format_payload",
                     "description": "Standardizes the entire payload hierarchy."
+                },
+                {
+                    "name": "history_compressor_role_prompt",
+                    "description": "Prompt for the History Compressor role."
                 }
             ],
             "abilities": []

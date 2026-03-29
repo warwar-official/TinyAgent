@@ -377,25 +377,56 @@ class SpotifyMCP(MCPServer):
         elif name == "get_lyrics":
             artist = args.get("artist", "")
             track_name = args.get("track_name", "")
+            import hashlib
+
+            cache_key = hashlib.md5(f"{artist}:{track_name}".encode("utf-8")).hexdigest()
+            cache_dir = "data/cache/lyrics"
+            cache_file = os.path.join(cache_dir, f"{cache_key}.json")
+
+            # Cache hit — return immediately, skip KB ingestion (already indexed on first fetch)
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        cached = json.load(f)
+                    return {"status": "success", "data": cached}
+                except Exception:
+                    pass  # Corrupt cache — fall through to network fetch
+
             try:
-                # lyrics.ovh API
-                response = requests.get(f"https://api.lyrics.ovh/v1/{artist}/{track_name}", timeout=10)
+                response = requests.get(
+                    f"https://api.lyrics.ovh/v1/{artist}/{track_name}", timeout=10
+                )
                 if response.status_code == 200:
                     lyrics_text = response.json().get("lyrics", "")
+
+                    # Persist to disk cache
+                    os.makedirs(cache_dir, exist_ok=True)
                     try:
-                        if self.kb_rag and lyrics_text:
-                            self.kb_rag.add_document(
-                                text=lyrics_text,
-                                url=f"spotify:track:{artist}:{track_name}",
-                                title=f"{artist} - {track_name}"
+                        with open(cache_file, "w", encoding="utf-8") as f:
+                            json.dump(
+                                {"lyrics": lyrics_text, "artist": artist, "track_name": track_name},
+                                f,
+                                ensure_ascii=False,
                             )
                     except Exception as e:
-                        print(f"Failed to ingest Lyrics into KBRAG: {e}")
-                        
+                        print(f"SpotifyMCP: Failed to write lyrics cache: {e}")
+
+                    # Async KB ingestion — never blocks the tool caller
+                    try:
+                        if self.kb_rag and lyrics_text:
+                            self.kb_rag.add_document_async(
+                                text=lyrics_text,
+                                url=f"spotify:track:{artist}:{track_name}",
+                                title=f"{artist} - {track_name}",
+                            )
+                    except Exception as e:
+                        print(f"SpotifyMCP: Failed to schedule KB ingestion for lyrics: {e}")
+
                     return {"status": "success", "data": {"lyrics": lyrics_text}}
                 return {"status": "error", "message": f"Lyrics not found. Status: {response.status_code}"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
-                
+
         else:
             raise ValueError(f"SpotifyMCP: Unknown tool {name}")
+

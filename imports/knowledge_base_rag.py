@@ -2,7 +2,11 @@ from qdrant_client import QdrantClient, models
 import uuid
 import time
 import numpy as np
+import concurrent.futures
 from imports.embedding_service import EmbeddingService
+
+# Shared daemon executor for fire-and-forget KB ingestion (never blocks tool callers)
+_KB_INGESTION_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="kb_ingest")
 
 # Similarity Thresholds (Cosine)
 DOC_DUPLICATE_THRESHOLD = 0.95
@@ -245,6 +249,13 @@ class KnowledgeBaseRAG:
                     payload=payload
                 )]
             )
+
+    def add_document_async(self, text: str, url: str = "", title: str = "") -> concurrent.futures.Future:
+        """
+        Submits add_document() to the background executor and returns immediately.
+        The caller is never blocked by chunking, embedding, or KNN operations.
+        """
+        return _KB_INGESTION_EXECUTOR.submit(self.add_document, text, url, title)
 
     def search(self, query: str, top_k: int = 5, limit_source_id: str = None) -> list[dict]:
         """

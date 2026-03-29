@@ -79,6 +79,7 @@ class YoutubeMCP(MCPServer):
                 with open(cache_file, "r", encoding="utf-8") as f:
                     cached_data = json.load(f)
                     tool_answer["tool_result"] = cached_data
+                    # Cache hit: skip KB ingestion — document already indexed on first fetch
                     return tool_answer
             except Exception:
                 pass
@@ -148,7 +149,7 @@ class YoutubeMCP(MCPServer):
                             full_text.append(t["text"])
                     if full_text:
                         merged_transcript = " ".join(full_text)
-                        self.kb_rag.add_document(
+                        self.kb_rag.add_document_async(
                             text=merged_transcript,
                             url=url,
                             title=f"{video_info.get('author')} - {video_info.get('name')}"

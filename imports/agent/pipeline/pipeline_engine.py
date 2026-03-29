@@ -206,9 +206,25 @@ class PipelineEngine:
         memories_text = json.dumps(memories, ensure_ascii=False)
         print(f"[DEBUG] memory_payload_size: {len(memories_text)} characters")
         
-        # ====== ARCHIVED CONTEXT ======
+        # ====== KB & ARCHIVED CONTEXT ======
+        kb_knowledge = ""
         archived_context = ""
         if self.mcp_connector:
+            # 1. Knowledge Base RAG (Unified retrieval for all roles)
+            try:
+                # KB RAG is a singleton, manually search it instead of tool call if tool not registered
+                from imports.knowledge_base_rag import KnowledgeBaseRAG
+                kb_rag = KnowledgeBaseRAG.get_instance()
+                kb_chunks = kb_rag.search(user_input, top_k=5)
+                if kb_chunks:
+                        # Standardized formatting for KB knowledge
+                        kb_knowledge = "Relevant Knowledge Base entries:\n"
+                        for chunk in kb_chunks:
+                            kb_knowledge += f"- [{chunk.get('title', 'Unknown')}] ({chunk.get('url', 'no-url')}): {chunk.get('text', '')}\n"
+            except Exception as e:
+                print(f"[DEBUG] Error searching Knowledge Base: {e}")
+
+            # 2. Archived Messages (Conversation Memory)
             try:
                 res = self.mcp_connector.execute_tool("memory.search_archived_messages", {"query": user_input, "limit": 2})
                 if isinstance(res, dict) and "results" in res:
@@ -240,6 +256,7 @@ class PipelineEngine:
         
         router_payload = self._clean_payload({
             "input": user_input_with_context,
+            "kb_knowledge": kb_knowledge,
             "history": history_records,
             "identity": identity,
             "memory": memories,
@@ -251,7 +268,6 @@ class PipelineEngine:
         self.log_step("Router", router_payload, router_out)
         
         req_type = router_out.get("result", {}).get("type", "task")
-        task_summary = router_out.get("result", {}).get("task_summary", user_input)
         raw_answer = router_out.get("result", {}).get("answer", "")
         
         # ── CONVERSATION PATH ───────────────────────────────────────────
@@ -259,11 +275,11 @@ class PipelineEngine:
             if send_status:
                 send_status("Generating response...")
             
-            # Formatter in conversation mode: input, history, memory, identity, input_images
+            # Formatter in conversation mode
             formatter_payload = self._clean_payload({
                 "input": user_input_with_context,
+                "kb_knowledge": kb_knowledge,
                 "raw_answer": raw_answer,
-                "task_summary": task_summary,
                 "history": history_records,
                 "memory": memories,
                 "identity": identity,
@@ -292,7 +308,7 @@ class PipelineEngine:
         relevant_skills = []
         if self.mcp_connector:
             try:
-                skill_res = self.mcp_connector.execute_tool("memory.search_skills", {"query": task_summary, "limit": 3})
+                skill_res = self.mcp_connector.execute_tool("memory.search_skills", {"query": user_input, "limit": 3})
                 if isinstance(skill_res, dict) and "results" in skill_res:
                     relevant_skills = skill_res["results"]
                     if relevant_skills:
@@ -302,7 +318,8 @@ class PipelineEngine:
 
         # Execute the task loop
         return self._execute_task_loop(
-            task_summary=task_summary,
+            user_input=user_input,
+            kb_knowledge=kb_knowledge,
             abilities=abilities,
             tools=tools,
             tasks_history=tasks_history,
@@ -342,7 +359,8 @@ class PipelineEngine:
             send_status("Continuing task with your response...")
 
         return self._execute_task_loop(
-            task_summary=state["task_summary"],
+            user_input=state["user_input"],
+            kb_knowledge=state.get("kb_knowledge", ""),
             abilities=state["abilities"],
             tools=state["tools"],
             tasks_history=state["tasks_history"],
@@ -363,7 +381,8 @@ class PipelineEngine:
 
     def _execute_task_loop(
         self,
-        task_summary: str,
+        user_input: str,
+        kb_knowledge: str,
         abilities,
         tools: list,
         tasks_history: list,
@@ -391,7 +410,7 @@ class PipelineEngine:
         verifier_identity = self.mcp_connector.get_verifier_identity_prompt() if self.mcp_connector else ""
         
         if execution_trace_manager:
-            execution_trace_manager.start_task(task_summary)
+            execution_trace_manager.start_task(user_input)
         
         verification_feedback = ""
         
@@ -414,7 +433,8 @@ class PipelineEngine:
             recent_history = tasks_history[-5:] if len(tasks_history) > 5 else tasks_history
             
             executor_payload = self._clean_payload({
-                "task_summary": task_summary,
+                "user_input": user_input,
+                "kb_knowledge": kb_knowledge,
                 "abilities": abilities,
                 "tools": tools,
                 "tasks_history": recent_history,
@@ -482,8 +502,8 @@ class PipelineEngine:
                 # Style the question through Formatter
                 formatter_payload = self._clean_payload({
                     "input": user_input_with_context,
+                    "kb_knowledge": kb_knowledge,
                     "raw_answer": raw_question,
-                    "task_summary": task_summary,
                     "history": history_records,
                     "memory": memories,
                     "identity": identity,
@@ -499,7 +519,8 @@ class PipelineEngine:
                 
                 # Save pipeline state for resumption
                 self._suspended_state = {
-                    "task_summary": task_summary,
+                    "user_input": user_input,
+                    "kb_knowledge": kb_knowledge,
                     "tasks_history": tasks_history,
                     "collected_images": collected_images,
                     "step_counter": step_counter,
@@ -624,7 +645,7 @@ class PipelineEngine:
             if send_status:
                 send_status("Extracting skills...")
             skill_payload = self._clean_payload({
-                "task_summary": task_summary,
+                "user_input": user_input,
                 "tasks_history": tasks_history,
                 "input_images": input_images,
                 "media": collected_images,
@@ -645,7 +666,7 @@ class PipelineEngine:
             send_status("Aggregating results...")
         
         aggregator_payload = self._clean_payload({
-            "task_summary": task_summary,
+            "user_input": user_input,
             "tasks_history": tasks_history,
             "input_images": input_images,
             "media": collected_images,
@@ -663,8 +684,8 @@ class PipelineEngine:
         
         formatter_payload = self._clean_payload({
             "input": user_input_with_context,
+            "kb_knowledge": kb_knowledge,
             "raw_answer": raw_answer,
-            "task_summary": task_summary,
             "history": history_records,
             "memory": memories,
             "identity": identity,

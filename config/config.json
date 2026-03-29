@@ -48,8 +48,8 @@
             }
         },
         "mcp_config_path": "./config/mcp_config.json",
-        "tool_summary_limit": 4000,
-        "tool_truncation_limit": 8000
+        "tool_summary_limit": 0,
+        "tool_truncation_limit": 0
     },
     "plugins": {
         "telegram": {

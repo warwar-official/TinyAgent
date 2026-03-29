@@ -13,7 +13,7 @@ class ExecutorRole(AIRole):
         Replaces the old Deconstructor + Worker two-step pipeline.
 
         Payload: {
-            "task_summary": str,
+            "user_input": str,
             "abilities": str,
             "tools": list,
             "tasks_history": list (last 5 entries only),
@@ -28,8 +28,7 @@ class ExecutorRole(AIRole):
             {"result": {"decision": "task_interrupted", "reason": str}}
         """
         SYSTEM_PROMPT = self.engine.mcp_connector.generate_prompt("executor_role_prompt", {}) if self.engine.mcp_connector else ""
-
-        task_summary = payload.get("task_summary", "")
+        user_input = payload.get("user_input", "")
         abilities = payload.get("abilities", "")
         tools = payload.get("tools", [])
         tasks_history = payload.get("tasks_history", [])
@@ -37,7 +36,7 @@ class ExecutorRole(AIRole):
         relevant_skills = payload.get("relevant_skills", [])
         verification_feedback = payload.get("verification_feedback", "")
 
-        user_prompt = f"### Task Context\n**Task Summary:** {task_summary}\n"
+        user_prompt = f"### Task Context\n**Goal:** {user_input}\n"
 
         if abilities:
             user_prompt += f"### Your Abilities\n{abilities}\n"
