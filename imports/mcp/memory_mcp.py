@@ -30,15 +30,8 @@ class MemoryMCP(MCPServer):
             limit = min(args.get("limit", 5), 5)  # Enforce max 5
             results = self.memory_rag.search(query, limit=limit)
             
-            # Formulate results with max 300 chars per result
-            truncated_results = []
-            for res in results:
-                content = str(res)
-                if len(content) > 300:
-                    content = content[:297] + "..."
-                truncated_results.append(content)
-            
-            return {"results": truncated_results}
+            # Formulate results
+            return {"results": [str(res) for res in results]}
         elif tool_name == "delete_memory":
             return {"status": "error", "message": "Not implemented"}
         elif tool_name == "save_archived_message":

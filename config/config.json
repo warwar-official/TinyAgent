@@ -47,7 +47,9 @@
                 "vision_enabled": false
             }
         },
-        "mcp_config_path": "./config/mcp_config.json"
+        "mcp_config_path": "./config/mcp_config.json",
+        "tool_summary_limit": 4000,
+        "tool_truncation_limit": 8000
     },
     "plugins": {
         "telegram": {

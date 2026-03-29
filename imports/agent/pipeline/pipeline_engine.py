@@ -87,18 +87,87 @@ class PipelineEngine:
             json.dump(log_entry, f, ensure_ascii=False, cls=HistoryEncoder)
             f.write("\n")
 
-    def execute_tool(self, tool_name: str, arguments: dict) -> str:
-        """Executes a tool and returns the result as string."""
+    def execute_tool(self, tool_name: str, arguments: dict) -> dict:
+        """Executes a tool and returns the result dict, with optional summarization/truncation flags."""
         if not self.mcp_connector:
-            return "Error: MCP Connector not initialized."
+            return {
+                "tool_name": tool_name,
+                "tool_arguments": arguments,
+                "tool_result": None,
+                "truncate": False,
+                "error": "Error: MCP Connector not initialized."
+            }
             
         try:
-            result = self.mcp_connector.execute_tool(tool_name, arguments)
-            if isinstance(result, (dict, list)):
-                return json.dumps(result, ensure_ascii=False)
-            return str(result)
+            result_dict = self.mcp_connector.execute_tool(tool_name, arguments)
+            if not isinstance(result_dict, dict):
+                 # Fallback for unexpected non-dict return
+                 result_dict = {
+                     "tool_name": tool_name,
+                     "tool_arguments": arguments,
+                     "tool_result": result_dict,
+                     "truncate": False,
+                     "error": None
+                 }
+
+            # Initialize custom flags
+            result_dict["summarized"] = False
+
+            # Extract content to check against limits
+            content = result_dict.get("tool_result")
+            if content is not None:
+                # Stringify content for limit checking
+                if isinstance(content, (dict, list)):
+                    content_str = json.dumps(content, ensure_ascii=False)
+                else:
+                    content_str = str(content)
+                
+                # Get limits from config
+                context_cfg = self.config.get("context", {})
+                summary_limit = context_cfg.get("tool_summary_limit", 0)
+                truncation_limit = context_cfg.get("tool_truncation_limit", 0)
+
+                transformed_content_str = content_str
+
+                # 1. Summarization
+                if summary_limit > 0 and len(content_str) > summary_limit:
+                    try:
+                        # Use HistoryCompressorRole to summarize
+                        dummy_entry = {
+                            "tool": tool_name,
+                            "arguments": arguments,
+                            "result": content_str
+                        }
+                        compressor_payload = {
+                            "entry": dummy_entry,
+                            "instruction": f"The output of tool '{tool_name}' is very large ({len(content_str)} chars). Provide a concise but complete factual summary."
+                        }
+                        summary_out = self.history_compressor.run(compressor_payload)
+                        compressed = summary_out.get("result", {}).get("compressed_text")
+                        if compressed:
+                            transformed_content_str = f"[SUMMARIZED RESULT]: {compressed}"
+                            result_dict["summarized"] = True
+                    except Exception as e:
+                        print(f"[DEBUG] Tool summarization failed: {e}")
+
+                # 2. Truncation (if still too long or if summarization was skipped/failed)
+                if truncation_limit > 0 and len(transformed_content_str) > truncation_limit:
+                    transformed_content_str = transformed_content_str[:truncation_limit] + "\n... [TRUNCATED]"
+                    result_dict["truncate"] = True
+
+                # Update the result_dict with the transformed content
+                if result_dict["summarized"] or result_dict.get("truncate", False):
+                    result_dict["tool_result"] = transformed_content_str
+
+            return result_dict
         except Exception as e:
-            return f"Error executing tool {tool_name}: {str(e)}"
+            return {
+                "tool_name": tool_name,
+                "tool_arguments": arguments,
+                "tool_result": None,
+                "truncate": False,
+                "error": f"Error executing tool {tool_name}: {str(e)}"
+            }
 
     @property
     def is_waiting_for_user(self) -> bool:
@@ -513,11 +582,6 @@ class PipelineEngine:
             
             step_resolution = resolution
             
-            if step_resolution == "failure":
-                result_str = str(step_result_data.get("result", ""))
-                if len(result_str) > 1000:
-                    step_result_data["result"] = result_str[:1000] + "\n... [TRUNCATED]"
-
             # ── Append to tasks_history ───────────────────────────────────
             history_entry = {
                 "id": step_counter,

@@ -166,10 +166,7 @@ class YoutubeMCP(MCPServer):
         if not text:
             return ""
         # Remove new lines and trim
-        clean_text = " ".join(text.split())
-        if len(clean_text) > 1000:
-            return clean_text[:997] + "..."
-        return clean_text
+        return " ".join(text.split())
 
     def search(self, query: str, type: list[str] = None, limit: int = 5) -> dict:
         tool_answer = {"tool_name": "search", "tool_arguments": {"query": query, "type": type, "limit": limit}, "tool_result": None, "truncate": False, "error": None}

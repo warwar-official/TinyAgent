@@ -175,11 +175,7 @@ class WebToolsMCP(MCPServer):
             
             content_type = response.headers.get('Content-Type', '').lower()
             if 'text/html' not in content_type:
-                if len(response.text) > 10000:
-                    tool_answer["truncate"] = True
-                    tool_answer["tool_result"] = f"Content-Type: {content_type}\n\n{response.text[:10000]}... (truncated)"
-                else:
-                    tool_answer["tool_result"] = f"Content-Type: {content_type}\n\n{response.text}"
+                tool_answer["tool_result"] = f"Content-Type: {content_type}\n\n{response.text}"
                 return tool_answer
 
             parser = PageContentParser()
@@ -203,11 +199,7 @@ class WebToolsMCP(MCPServer):
                 output_parts.append("\n".join(unique_links))
                 
             result = "\n".join(output_parts)
-            if len(result) > 10000:
-                tool_answer["truncate"] = True
-                tool_answer["tool_result"] = result[:10000] + "\n... (truncated)"
-            else:
-                tool_answer["tool_result"] = result
+            tool_answer["tool_result"] = result
             return tool_answer
 
         except Exception as e:
