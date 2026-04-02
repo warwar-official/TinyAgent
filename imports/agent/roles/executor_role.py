@@ -51,7 +51,7 @@ class ExecutorRole(AIRole):
             user_prompt += "\n"
 
         if tasks_history:
-            user_prompt += f"### Recent Execution Steps (Last {len(tasks_history)})\n"
+            user_prompt += f"### Recent Execution Steps:\n"
             for i, entry in enumerate(tasks_history, 1):
                 desc = entry.get("description", "No description")
                 res = entry.get("resolution", "unknown")
@@ -60,8 +60,6 @@ class ExecutorRole(AIRole):
                 if result_data:
                     # Truncate result data if it's too long
                     res_str = json.dumps(result_data, ensure_ascii=False)
-                    if len(res_str) > 500:
-                        res_str = res_str[:500] + "... [TRUNCATED]"
                     user_prompt += f"   → Result: {res_str}\n"
             user_prompt += "\n"
 
@@ -70,9 +68,6 @@ class ExecutorRole(AIRole):
 
         if verification_feedback:
             user_prompt += f"### Verifier Feedback\n{verification_feedback}\n"
-
-        if tasks_history and len(tasks_history) > 8:
-            user_prompt += "> [!IMPORTANT]\n> `tasks_history` is getting long. Consider using `summarize_history_range` to clean it up.\n"
 
         user_prompt += "\nAnalyze the current state and choose ONE action, or conclude the task."
 
